@@ -1,0 +1,1395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOP Builder — Posillico</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.2.0/docx.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<style>
+/* ── RESET & BASE ── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --pos-blue:#0057B8;--pos-green:#509E2F;--pos-dark:#1a1f2e;
+  --surface:#ffffff;--surface-2:#f4f5f7;--surface-3:#e8eaed;
+  --text:#1a1f2e;--text-2:#5f6577;--text-3:#9199ad;
+  --border:#dfe1e6;--border-2:#c1c7d0;
+  --blue-light:#e8f0fe;--purple:#7c3aed;--purple-light:#ede9fe;
+  --orange:#f97316;--orange-light:#fff7ed;
+  --red:#dc2626;--red-light:#fef2f2;
+  --green-light:#ecfdf5;
+  --radius:10px;--radius-lg:14px;--radius-sm:6px;
+  --shadow:0 1px 3px rgba(0,0,0,.08),0 4px 12px rgba(0,0,0,.04);
+  --shadow-lg:0 4px 16px rgba(0,0,0,.1),0 12px 40px rgba(0,0,0,.06);
+  --transition:180ms ease;
+}
+html{font-size:15px}
+body{font-family:'Noto Sans',system-ui,sans-serif;background:var(--surface-2);color:var(--text);min-height:100vh;overflow-x:hidden}
+button{font-family:inherit;cursor:pointer;border:none;background:none;font-size:inherit}
+input,textarea,select{font-family:inherit;font-size:inherit}
+a{color:var(--pos-blue);text-decoration:none}
+
+/* ── LAYOUT ── */
+.app{display:grid;grid-template-columns:280px 1fr;grid-template-rows:56px 1fr;height:100vh;overflow:hidden}
+.topbar{grid-column:1/-1;background:var(--pos-dark);display:flex;align-items:center;justify-content:space-between;padding:0 20px;z-index:100}
+.topbar-left{display:flex;align-items:center;gap:14px}
+.topbar-logo{height:28px;filter:brightness(0) invert(1)}
+.topbar-title{color:#fff;font-weight:600;font-size:1rem;letter-spacing:-.01em}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-btn{color:rgba(255,255,255,.7);padding:6px 12px;border-radius:var(--radius-sm);font-size:.8rem;font-weight:500;transition:var(--transition)}
+.topbar-btn:hover{background:rgba(255,255,255,.1);color:#fff}
+.topbar-btn.active{background:rgba(255,255,255,.12);color:#fff}
+
+.sidebar{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:16px 0}
+.sidebar-section{padding:0 16px;margin-bottom:20px}
+.sidebar-label{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);padding:0 0 8px 0}
+.sidebar-item{display:flex;align-items:center;gap:10px;padding:8px 16px;border-radius:var(--radius-sm);cursor:pointer;font-size:.85rem;color:var(--text-2);transition:var(--transition);margin:0 -16px;position:relative}
+.sidebar-item:hover{background:var(--surface-2);color:var(--text)}
+.sidebar-item.active{background:var(--blue-light);color:var(--pos-blue);font-weight:500}
+.sidebar-item .icon{width:18px;text-align:center;font-size:.9rem;flex-shrink:0}
+.sidebar-item .badge{margin-left:auto;background:var(--surface-3);color:var(--text-3);font-size:.7rem;font-weight:600;padding:1px 7px;border-radius:10px}
+.sidebar-item.active .badge{background:var(--pos-blue);color:#fff}
+.sidebar-divider{height:1px;background:var(--border);margin:12px 16px}
+.new-doc-btn{display:flex;align-items:center;gap:8px;width:calc(100% - 32px);margin:0 16px 16px;padding:10px 14px;background:var(--pos-blue);color:#fff;border-radius:var(--radius);font-weight:600;font-size:.85rem;transition:var(--transition);justify-content:center}
+.new-doc-btn:hover{background:#004a9e}
+
+.main{overflow-y:auto;background:var(--surface-2)}
+
+/* ── PAGES ── */
+.page{display:none;height:100%;overflow-y:auto}
+.page.active{display:flex;flex-direction:column}
+
+/* ── NEW DOC / TEMPLATE PICKER ── */
+.template-picker{padding:40px;max-width:900px;margin:0 auto;width:100%}
+.template-picker h1{font-size:1.5rem;font-weight:700;margin-bottom:4px}
+.template-picker .subtitle{color:var(--text-2);margin-bottom:28px;font-size:.9rem}
+.doc-type-toggle{display:flex;gap:4px;background:var(--surface-3);border-radius:var(--radius);padding:4px;margin-bottom:28px;width:fit-content}
+.doc-type-btn{padding:8px 20px;border-radius:var(--radius-sm);font-weight:500;font-size:.85rem;color:var(--text-2);transition:var(--transition)}
+.doc-type-btn.active{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
+.template-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-bottom:32px}
+.template-card{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius-lg);padding:20px;cursor:pointer;transition:var(--transition);position:relative}
+.template-card:hover{border-color:var(--pos-blue);box-shadow:var(--shadow)}
+.template-card.selected{border-color:var(--pos-blue);background:var(--blue-light)}
+.template-card-header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.template-card-color{width:8px;height:36px;border-radius:4px}
+.template-card-logos{display:flex;align-items:center;gap:6px}
+.template-card-logos img{height:22px;object-fit:contain}
+.template-card-name{font-weight:600;font-size:.95rem}
+.template-card-check{position:absolute;top:12px;right:12px;width:22px;height:22px;border-radius:50%;background:var(--pos-blue);color:#fff;display:none;align-items:center;justify-content:center;font-size:.7rem}
+.template-card.selected .template-card-check{display:flex}
+
+/* ── DROP ZONE ── */
+.drop-zone-area{margin-bottom:28px}
+.drop-zone-area h2{font-size:1.1rem;font-weight:600;margin-bottom:12px}
+.drop-zone{border:2px dashed var(--border-2);border-radius:var(--radius-lg);padding:32px;text-align:center;cursor:pointer;transition:var(--transition);background:var(--surface)}
+.drop-zone:hover,.drop-zone.dragover{border-color:var(--pos-blue);background:var(--blue-light)}
+.drop-zone-icon{font-size:2rem;margin-bottom:8px;color:var(--text-3)}
+.drop-zone-text{color:var(--text-2);font-size:.85rem}
+.drop-zone-text strong{color:var(--text)}
+.dropped-files{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.dropped-file{display:flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 10px;font-size:.78rem}
+.dropped-file .remove{color:var(--red);cursor:pointer;font-weight:700}
+
+.overview-area{margin-bottom:24px}
+.overview-area h2{font-size:1.1rem;font-weight:600;margin-bottom:8px}
+.overview-area textarea{width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);resize:vertical;min-height:80px;font-size:.9rem;line-height:1.5;transition:var(--transition)}
+.overview-area textarea:focus{outline:none;border-color:var(--pos-blue);box-shadow:0 0 0 3px rgba(0,87,184,.12)}
+
+.draft-btn{display:flex;align-items:center;gap:8px;padding:12px 28px;background:linear-gradient(135deg,var(--pos-blue),#003d82);color:#fff;border-radius:var(--radius);font-weight:600;font-size:.95rem;transition:var(--transition);box-shadow:var(--shadow)}
+.draft-btn:hover{transform:translateY(-1px);box-shadow:var(--shadow-lg)}
+.draft-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.draft-btn .spinner{display:none;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+.draft-btn.loading .spinner{display:block}
+.draft-btn.loading .btn-text{display:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── EDITOR ── */
+.editor-page{display:none;height:100%;overflow:hidden}
+.editor-page.active{display:grid;grid-template-columns:1fr 420px}
+.editor-panel{overflow-y:auto;padding:24px}
+.preview-panel{background:var(--surface);border-left:1px solid var(--border);overflow-y:auto;padding:32px 28px}
+
+.editor-topbar{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+.editor-title-input{font-size:1.3rem;font-weight:700;border:none;background:transparent;flex:1;min-width:200px;padding:4px 0}
+.editor-title-input:focus{outline:none}
+.editor-actions{display:flex;gap:8px;margin-left:auto}
+.btn{padding:8px 16px;border-radius:var(--radius-sm);font-weight:500;font-size:.82rem;transition:var(--transition);display:flex;align-items:center;gap:6px}
+.btn-primary{background:var(--pos-blue);color:#fff}
+.btn-primary:hover{background:#004a9e}
+.btn-outline{border:1px solid var(--border);color:var(--text-2);background:var(--surface)}
+.btn-outline:hover{background:var(--surface-2);color:var(--text)}
+.btn-green{background:var(--pos-green);color:#fff}
+.btn-green:hover{background:#438726}
+.btn-danger{background:var(--red);color:#fff}
+.btn-danger:hover{background:#b91c1c}
+.btn-sm{padding:5px 10px;font-size:.76rem}
+.btn-icon{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius-sm);border:1px solid var(--border);color:var(--text-2)}
+.btn-icon:hover{background:var(--surface-2)}
+
+/* ── SECTIONS ── */
+.sections-list{display:flex;flex-direction:column;gap:12px}
+.section-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;transition:var(--transition)}
+.section-card.dragging{opacity:.4;border-color:var(--pos-blue)}
+.section-card.drag-over{border-color:var(--pos-blue);box-shadow:0 0 0 2px rgba(0,87,184,.2)}
+.section-header{display:flex;align-items:center;gap:8px;padding:12px 14px;background:var(--surface-2);border-bottom:1px solid var(--border);cursor:grab}
+.section-header:active{cursor:grabbing}
+.drag-handle{color:var(--text-3);font-size:1rem;cursor:grab}
+.section-type-badge{padding:2px 10px;border-radius:20px;font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.section-type-badge.steps{background:var(--blue-light);color:var(--pos-blue)}
+.section-type-badge.narrative{background:var(--purple-light);color:var(--purple)}
+.section-title-inline{font-weight:600;font-size:.88rem;border:none;background:transparent;flex:1;padding:2px 4px}
+.section-title-inline:focus{outline:none;background:var(--surface);border-radius:4px}
+.section-actions{display:flex;gap:4px;margin-left:auto}
+.section-body{padding:14px}
+.section-content-editor{width:100%;min-height:100px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);resize:vertical;font-size:.85rem;line-height:1.65}
+.section-content-editor:focus{outline:none;border-color:var(--pos-blue);box-shadow:0 0 0 3px rgba(0,87,184,.1)}
+.section-footer{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--border);flex-wrap:wrap}
+.section-images{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding:0 14px 10px}
+.section-image-thumb{width:72px;height:54px;object-fit:cover;border-radius:var(--radius-sm);border:1px solid var(--border);cursor:pointer;transition:var(--transition)}
+.section-image-thumb:hover{border-color:var(--pos-blue);box-shadow:var(--shadow)}
+.section-image-container{position:relative;display:inline-block}
+.section-image-remove{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:var(--red);color:#fff;font-size:.65rem;display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:0;transition:var(--transition)}
+.section-image-container:hover .section-image-remove{opacity:1}
+
+.add-section-bar{display:flex;gap:8px;margin-top:8px;padding:12px;border:2px dashed var(--border);border-radius:var(--radius);justify-content:center}
+
+/* ── PREVIEW ── */
+.preview-header{text-align:center;margin-bottom:28px}
+.preview-label{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-bottom:12px}
+.preview-doc{background:#fff;border:1px solid var(--border);border-radius:4px;padding:0;box-shadow:var(--shadow);font-size:.82rem;line-height:1.55;overflow:hidden}
+.preview-doc-header{padding:20px 28px 14px;border-bottom:3px solid var(--pos-blue);display:flex;align-items:center;justify-content:space-between}
+.preview-doc-header img{height:28px;object-fit:contain}
+.preview-doc-body{padding:24px 28px}
+.preview-doc-title{font-size:1.1rem;font-weight:700;margin-bottom:16px}
+.preview-section{margin-bottom:18px}
+.preview-section-heading{font-weight:700;padding:6px 10px;margin-bottom:8px;border-radius:4px;font-size:.85rem}
+.preview-section-content{padding:0 2px;font-size:.82rem;white-space:pre-wrap}
+.preview-section-content ol,.preview-section-content ul{padding-left:20px;margin:4px 0}
+.preview-section-content li{margin-bottom:4px}
+.preview-section-images{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.preview-section-images img{height:60px;border-radius:4px;border:1px solid var(--border)}
+
+/* ── SETTINGS ── */
+.settings-page{padding:40px;max-width:600px;margin:0 auto;width:100%}
+.settings-page h1{font-size:1.5rem;font-weight:700;margin-bottom:24px}
+.settings-group{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px}
+.settings-group h3{font-size:.95rem;font-weight:600;margin-bottom:4px}
+.settings-group p{font-size:.8rem;color:var(--text-2);margin-bottom:12px}
+.settings-input{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.88rem;font-family:'Courier New',monospace}
+.settings-input:focus{outline:none;border-color:var(--pos-blue);box-shadow:0 0 0 3px rgba(0,87,184,.1)}
+.settings-status{font-size:.78rem;margin-top:8px;display:flex;align-items:center;gap:6px}
+.settings-status.connected{color:var(--pos-green)}
+.settings-status.disconnected{color:var(--red)}
+
+/* ── DRAFTS LIST ── */
+.drafts-page{padding:40px;max-width:900px;margin:0 auto;width:100%}
+.drafts-page h1{font-size:1.5rem;font-weight:700;margin-bottom:24px}
+.draft-list-item{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;margin-bottom:8px;cursor:pointer;transition:var(--transition)}
+.draft-list-item:hover{border-color:var(--pos-blue);box-shadow:var(--shadow)}
+.draft-list-item .draft-info{flex:1}
+.draft-list-item .draft-title{font-weight:600;font-size:.9rem}
+.draft-list-item .draft-meta{font-size:.76rem;color:var(--text-2);margin-top:2px}
+.draft-list-item .draft-template-badge{padding:2px 10px;border-radius:20px;font-size:.68rem;font-weight:600;border:1px solid var(--border)}
+.empty-state{text-align:center;padding:60px 20px;color:var(--text-3)}
+.empty-state .icon{font-size:2.5rem;margin-bottom:12px}
+.empty-state p{font-size:.9rem}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.active{display:flex}
+.modal{background:var(--surface);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);max-width:500px;width:100%;max-height:80vh;overflow-y:auto}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}
+.modal-header h3{font-size:1rem;font-weight:600}
+.modal-body{padding:20px}
+.modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid var(--border)}
+
+/* ── TOAST ── */
+.toast-container{position:fixed;top:70px;right:20px;z-index:2000;display:flex;flex-direction:column;gap:8px}
+.toast{padding:10px 16px;border-radius:var(--radius-sm);font-size:.82rem;font-weight:500;box-shadow:var(--shadow-lg);animation:slideIn .3s ease;display:flex;align-items:center;gap:8px}
+.toast.success{background:#065f46;color:#fff}
+.toast.error{background:var(--red);color:#fff}
+.toast.info{background:var(--pos-blue);color:#fff}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* ── RESPONSIVE ── */
+@media(max-width:1100px){
+  .editor-page.active{grid-template-columns:1fr}
+  .preview-panel{display:none}
+}
+@media(max-width:768px){
+  .app{grid-template-columns:1fr;grid-template-rows:56px auto 1fr}
+  .sidebar{display:none}
+  .topbar-right .topbar-btn span{display:none}
+}
+
+/* ── AI LOADING ── */
+.ai-loading{display:flex;align-items:center;gap:10px;padding:14px;background:var(--blue-light);border-radius:var(--radius);margin-top:12px;font-size:.85rem;color:var(--pos-blue);font-weight:500}
+.ai-loading .dots{display:flex;gap:4px}
+.ai-loading .dots span{width:6px;height:6px;border-radius:50%;background:var(--pos-blue);animation:dotPulse 1.2s infinite}
+.ai-loading .dots span:nth-child(2){animation-delay:.2s}
+.ai-loading .dots span:nth-child(3){animation-delay:.4s}
+@keyframes dotPulse{0%,80%,100%{opacity:.3;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ═══ TOPBAR ═══ -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <img src="https://fzjzzujrjqjacbfbwcvd.supabase.co/storage/v1/object/public/Work/Logos/logo_posillico.png" alt="Posillico" class="topbar-logo" id="topbarLogo">
+      <span class="topbar-title">SOP Builder</span>
+    </div>
+    <div class="topbar-right">
+      <button class="topbar-btn" onclick="showPage('drafts')">📄 <span>Drafts</span></button>
+      <button class="topbar-btn" onclick="showPage('settings')">⚙️ <span>Settings</span></button>
+    </div>
+  </header>
+
+  <!-- ═══ SIDEBAR ═══ -->
+  <aside class="sidebar" id="sidebar">
+    <button class="new-doc-btn" onclick="showPage('new')">+ New Document</button>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Saved Drafts</div>
+      <div id="sidebarDrafts"><div class="sidebar-item" style="color:var(--text-3);font-size:.8rem;padding-left:16px">No drafts yet</div></div>
+    </div>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-section">
+      <div class="sidebar-item" onclick="showPage('settings')"><span class="icon">⚙️</span> Settings</div>
+    </div>
+  </aside>
+
+  <!-- ═══ MAIN ═══ -->
+  <main class="main" id="mainContent">
+
+    <!-- PAGE: New Document -->
+    <div class="page active" id="page-new">
+      <div class="template-picker">
+        <h1>Create a New Document</h1>
+        <p class="subtitle">Pick a template, choose your doc type, and let AI help you draft it.</p>
+
+        <!-- Doc Type Toggle -->
+        <div class="doc-type-toggle">
+          <button class="doc-type-btn active" data-type="sop" onclick="setDocType(this)">SOP</button>
+          <button class="doc-type-btn" data-type="writeup" onclick="setDocType(this)">Write-up</button>
+          <button class="doc-type-btn" data-type="both" onclick="setDocType(this)">Both</button>
+        </div>
+
+        <!-- Template Grid -->
+        <div class="template-grid" id="templateGrid"></div>
+
+        <!-- Drop Zone -->
+        <div class="drop-zone-area">
+          <h2>Reference Materials</h2>
+          <div class="drop-zone" id="dropZone">
+            <div class="drop-zone-icon">📎</div>
+            <div class="drop-zone-text"><strong>Drop screenshots & files here</strong><br>or click to browse — images, PDFs, text files</div>
+            <input type="file" id="dropZoneInput" multiple accept="image/*,.pdf,.txt,.doc,.docx" style="display:none">
+          </div>
+          <div class="dropped-files" id="droppedFiles"></div>
+        </div>
+
+        <!-- Overview -->
+        <div class="overview-area">
+          <h2>Quick Overview</h2>
+          <textarea id="overviewText" placeholder="Describe what this SOP/write-up should cover. Be as detailed or brief as you want — AI will flesh it out."></textarea>
+        </div>
+
+        <!-- Draft Button -->
+        <button class="draft-btn" id="draftBtn" onclick="handleDraftIt()">
+          <span class="btn-text">✨ Draft It</span>
+          <div class="spinner"></div>
+        </button>
+        <div id="aiLoadingArea"></div>
+      </div>
+    </div>
+
+    <!-- PAGE: Editor -->
+    <div class="editor-page" id="page-editor">
+      <div class="editor-panel">
+        <div class="editor-topbar">
+          <input type="text" class="editor-title-input" id="editorTitle" placeholder="Document Title" value="">
+          <div class="editor-actions">
+            <button class="btn btn-outline" onclick="saveCurrentDraft()">💾 Save</button>
+            <button class="btn btn-green" onclick="exportDocx()">📥 Export .docx</button>
+            <button class="btn btn-outline" onclick="togglePreview()">👁 Preview</button>
+          </div>
+        </div>
+        <div class="sections-list" id="sectionsList"></div>
+        <div class="add-section-bar">
+          <button class="btn btn-outline" onclick="addSection('steps')">+ Steps Section</button>
+          <button class="btn btn-outline" onclick="addSection('narrative')">+ Narrative Section</button>
+        </div>
+      </div>
+      <div class="preview-panel" id="previewPanel">
+        <div class="preview-label">Live Preview</div>
+        <div class="preview-doc" id="previewDoc"></div>
+      </div>
+    </div>
+
+    <!-- PAGE: Drafts -->
+    <div class="page" id="page-drafts">
+      <div class="drafts-page">
+        <h1>Saved Drafts</h1>
+        <div id="draftsList"></div>
+      </div>
+    </div>
+
+    <!-- PAGE: Settings -->
+    <div class="page" id="page-settings">
+      <div class="settings-page">
+        <h1>Settings</h1>
+        <div class="settings-group">
+          <h3>Anthropic API Key</h3>
+          <p>Used for AI drafting & revision. Stored only on this device.</p>
+          <input type="password" class="settings-input" id="apiKeyInput" placeholder="sk-ant-..." value="">
+          <button class="btn btn-primary" style="margin-top:10px" onclick="saveApiKey()">Save Key</button>
+          <div class="settings-status" id="apiKeyStatus"></div>
+        </div>
+        <div class="settings-group">
+          <h3>Supabase Connection</h3>
+          <p>Connected to your Posillico workspace.</p>
+          <div class="settings-status connected" id="supabaseStatus">● Connected</div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ═══ TOAST CONTAINER ═══ -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ═══ IMAGE PREVIEW MODAL ═══ -->
+<div class="modal-overlay" id="imageModal">
+  <div class="modal" style="max-width:700px">
+    <div class="modal-header">
+      <h3>Image Preview</h3>
+      <button onclick="closeModal('imageModal')" style="font-size:1.2rem">✕</button>
+    </div>
+    <div class="modal-body" style="text-align:center">
+      <img id="imageModalImg" style="max-width:100%;border-radius:6px">
+    </div>
+  </div>
+</div>
+
+<!-- ═══ REVISE MODAL ═══ -->
+<div class="modal-overlay" id="reviseModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Revise with AI</h3>
+      <button onclick="closeModal('reviseModal')" style="font-size:1.2rem">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.85rem;color:var(--text-2);margin-bottom:12px">Tell AI how to revise this section:</p>
+      <textarea id="reviseInstruction" class="section-content-editor" placeholder="e.g. Make it shorter, add more detail about X, rewrite as numbered steps..." style="min-height:80px"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('reviseModal')">Cancel</button>
+      <button class="btn btn-primary" id="reviseSubmitBtn" onclick="submitRevision()">✨ Revise</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  SOP BUILDER — POSILLICO                                        ║
+// ║  Single-file app: Supabase + Anthropic AI + docx export          ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+// ── CONFIG ──
+const SUPABASE_URL = 'https://fzjzzujrjqjacbfbwcvd.supabase.co';
+const SUPABASE_ANON_KEY = localStorage.getItem('sop_supabase_key') || '';
+const STORAGE_BUCKET = 'Work';
+const LOGO_BASE = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/Logos/`;
+
+// Initialize Supabase — we'll use the anon key from the project
+// Since this is a public bucket, we use the anon key
+const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, 
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6anp6dWpyanFqYWNiZmJ3Y3ZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzgxNjQ3MTcsImV4cCI6MjA1Mzc0MDcxN30.VPgSq6MbyVJPSMG-44tRSvkTGGKnqBqyakbJSgmzVE4'
+) : null;
+
+// ── STATE ──
+let state = {
+  docType: 'sop',          // sop | writeup | both
+  selectedTemplate: null,
+  templates: [],
+  currentDraft: null,
+  sections: [],
+  dropZoneFiles: [],        // {name, type, dataUrl, file}
+  drafts: [],
+  reviseTargetIdx: null,
+};
+
+// ── TEMPLATES (loaded from DB or fallback) ──
+const TEMPLATE_DEFAULTS = [
+  { id: 'riskcast', name: 'Riskcast', header_color: '#0057B8', right_logo: 'logo_riskcast.png', font: 'Noto Sans' },
+  { id: 'viewpoint', name: 'Viewpoint', header_color: '#0063A3', right_logo: 'logo_viewpoint_vista.png', font: 'Noto Sans' },
+  { id: 'posillico', name: 'Posillico', header_color: '#0057B8', right_logo: null, font: 'Noto Sans' },
+  { id: 'powerbi', name: 'Power BI', header_color: '#BF8F00', right_logo: 'logo_power_bi.png', font: 'Noto Sans' },
+  { id: 'procore', name: 'Procore', header_color: '#FF742F', right_logo: 'logo_procore.png', font: 'Noto Sans' },
+];
+
+// ═══════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════
+async function init() {
+  loadApiKey();
+  await loadTemplates();
+  renderTemplateGrid();
+  await loadDrafts();
+  renderSidebarDrafts();
+  showPage('new');
+}
+
+// ═══════════════════════════════════════════
+// TEMPLATES
+// ═══════════════════════════════════════════
+async function loadTemplates() {
+  try {
+    if (!supabase) throw new Error('No supabase');
+    const { data, error } = await supabase.from('work_sop_templates').select('*');
+    if (error) throw error;
+    if (data && data.length > 0) {
+      state.templates = data;
+      return;
+    }
+  } catch (e) {
+    console.log('Using default templates:', e.message);
+  }
+  state.templates = TEMPLATE_DEFAULTS;
+}
+
+function renderTemplateGrid() {
+  const grid = document.getElementById('templateGrid');
+  grid.innerHTML = state.templates.map((t, i) => {
+    const color = t.header_color;
+    const rightLogo = t.right_logo ? `<img src="${LOGO_BASE}${t.right_logo}" alt="${t.name}">` : '';
+    return `
+      <div class="template-card" data-idx="${i}" onclick="selectTemplate(${i})">
+        <div class="template-card-check">✓</div>
+        <div class="template-card-header">
+          <div class="template-card-color" style="background:${color}"></div>
+          <div class="template-card-logos">
+            <img src="${LOGO_BASE}logo_posillico.png" alt="Posillico" style="height:20px">
+            ${rightLogo}
+          </div>
+        </div>
+        <div class="template-card-name">${t.name}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function selectTemplate(idx) {
+  state.selectedTemplate = idx;
+  document.querySelectorAll('.template-card').forEach((c, i) => {
+    c.classList.toggle('selected', i === idx);
+  });
+}
+
+// ═══════════════════════════════════════════
+// DOC TYPE
+// ═══════════════════════════════════════════
+function setDocType(btn) {
+  document.querySelectorAll('.doc-type-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  state.docType = btn.dataset.type;
+}
+
+// ═══════════════════════════════════════════
+// DROP ZONE
+// ═══════════════════════════════════════════
+const dropZone = document.getElementById('dropZone');
+const dropZoneInput = document.getElementById('dropZoneInput');
+
+dropZone.addEventListener('click', () => dropZoneInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  handleFiles(e.dataTransfer.files);
+});
+dropZoneInput.addEventListener('change', e => handleFiles(e.target.files));
+
+function handleFiles(fileList) {
+  Array.from(fileList).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      state.dropZoneFiles.push({ name: file.name, type: file.type, dataUrl: e.target.result, file });
+      renderDroppedFiles();
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderDroppedFiles() {
+  const container = document.getElementById('droppedFiles');
+  container.innerHTML = state.dropZoneFiles.map((f, i) => `
+    <div class="dropped-file">
+      ${f.type.startsWith('image/') ? '🖼' : '📄'} ${f.name}
+      <span class="remove" onclick="removeDroppedFile(${i})">✕</span>
+    </div>
+  `).join('');
+}
+
+function removeDroppedFile(i) {
+  state.dropZoneFiles.splice(i, 1);
+  renderDroppedFiles();
+}
+
+// ═══════════════════════════════════════════
+// AI DRAFTING
+// ═══════════════════════════════════════════
+function getApiKey() {
+  return localStorage.getItem('sop_api_key') || '';
+}
+
+function loadApiKey() {
+  const key = getApiKey();
+  document.getElementById('apiKeyInput').value = key;
+  const status = document.getElementById('apiKeyStatus');
+  if (key) {
+    status.className = 'settings-status connected';
+    status.textContent = '● API key saved on this device';
+  } else {
+    status.className = 'settings-status disconnected';
+    status.textContent = '○ No API key set';
+  }
+}
+
+function saveApiKey() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  localStorage.setItem('sop_api_key', key);
+  loadApiKey();
+  toast('API key saved!', 'success');
+}
+
+async function callAI(systemPrompt, userPrompt) {
+  const key = getApiKey();
+  if (!key) {
+    toast('Set your Anthropic API key in Settings first.', 'error');
+    throw new Error('No API key');
+  }
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    }),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error ${resp.status}`);
+  }
+
+  const data = await resp.json();
+  return data.content[0].text;
+}
+
+async function handleDraftIt() {
+  if (state.selectedTemplate === null) { toast('Pick a template first!', 'error'); return; }
+  const overview = document.getElementById('overviewText').value.trim();
+  if (!overview) { toast('Write a quick overview so AI knows what to draft.', 'error'); return; }
+
+  const btn = document.getElementById('draftBtn');
+  btn.classList.add('loading');
+  btn.disabled = true;
+  
+  const loadingArea = document.getElementById('aiLoadingArea');
+  loadingArea.innerHTML = `<div class="ai-loading"><div class="dots"><span></span><span></span><span></span></div> AI is drafting your document...</div>`;
+
+  const template = state.templates[state.selectedTemplate];
+  const docTypeLabel = state.docType === 'both' ? 'SOP (step-by-step how-to) AND a Write-up (narrative documentation)' 
+    : state.docType === 'sop' ? 'SOP (step-by-step how-to)' : 'Write-up (narrative documentation)';
+
+  // Build image descriptions for context
+  let imageContext = '';
+  if (state.dropZoneFiles.length > 0) {
+    const imageFiles = state.dropZoneFiles.filter(f => f.type.startsWith('image/'));
+    const otherFiles = state.dropZoneFiles.filter(f => !f.type.startsWith('image/'));
+    if (imageFiles.length) imageContext += `\nThe user has attached ${imageFiles.length} screenshot(s) as reference. Reference these as figures in the document where appropriate.`;
+    if (otherFiles.length) imageContext += `\nThe user also attached: ${otherFiles.map(f => f.name).join(', ')}`;
+  }
+
+  const systemPrompt = `You are an SOP/documentation writer for Posillico, a construction company. 
+You produce clear, practical documents for field and office teams.
+Write in a professional but approachable tone. Use "Noto Sans" style — clean and direct.
+For SOPs: Write numbered steps. Each step should be clear and actionable.
+For Write-ups: Write narrative paragraphs with context and detail.
+
+RESPOND ONLY WITH VALID JSON. No markdown, no backticks, no explanation.
+The JSON must be an array of section objects:
+[
+  {
+    "title": "Section Title",
+    "type": "steps" or "narrative",
+    "content": "The section content. For steps, use numbered lines like:\\n1. Do this\\n2. Then do that\\nFor narrative, write paragraphs."
+  }
+]
+
+Generate 3-6 sections. Each section should have a descriptive title.`;
+
+  const userPrompt = `Create a ${docTypeLabel} about: ${overview}
+Template: ${template.name}
+${imageContext}
+
+Return ONLY the JSON array of sections.`;
+
+  try {
+    const raw = await callAI(systemPrompt, userPrompt);
+    // Parse JSON from response
+    let sections;
+    try {
+      const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      sections = JSON.parse(cleaned);
+    } catch (parseErr) {
+      // Try to extract JSON array
+      const match = raw.match(/\[[\s\S]*\]/);
+      if (match) sections = JSON.parse(match[0]);
+      else throw new Error('Could not parse AI response as JSON');
+    }
+
+    // Build sections state
+    state.sections = sections.map((s, i) => ({
+      id: `sec_${Date.now()}_${i}`,
+      title: s.title,
+      type: s.type || 'steps',
+      content: s.content,
+      images: [],
+      order: i,
+    }));
+
+    // Set title
+    const title = `${template.name} — ${overview.slice(0, 60)}${overview.length > 60 ? '...' : ''}`;
+    state.currentDraft = {
+      id: null,
+      title: title,
+      template_id: template.id || state.selectedTemplate,
+      doc_type: state.docType,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    document.getElementById('editorTitle').value = title;
+    renderSections();
+    renderPreview();
+    showPage('editor');
+    toast('Draft created!', 'success');
+
+  } catch (err) {
+    toast(`AI Error: ${err.message}`, 'error');
+    console.error(err);
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+    loadingArea.innerHTML = '';
+  }
+}
+
+// ═══════════════════════════════════════════
+// SECTION EDITOR
+// ═══════════════════════════════════════════
+function renderSections() {
+  const list = document.getElementById('sectionsList');
+  list.innerHTML = state.sections.map((sec, i) => `
+    <div class="section-card" draggable="true" data-idx="${i}" 
+         ondragstart="dragStart(event,${i})" ondragover="dragOver(event,${i})" 
+         ondrop="dragDrop(event,${i})" ondragend="dragEnd()">
+      <div class="section-header">
+        <span class="drag-handle">⠿</span>
+        <span class="section-type-badge ${sec.type}">${sec.type}</span>
+        <input type="text" class="section-title-inline" value="${escHtml(sec.title)}" 
+               onchange="updateSectionTitle(${i}, this.value)">
+        <div class="section-actions">
+          <button class="btn btn-sm btn-outline" onclick="openReviseModal(${i})">✨ Revise</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleSectionType(${i})">${sec.type === 'steps' ? '📝' : '📋'}</button>
+          <button class="btn-icon btn-sm" onclick="removeSection(${i})" title="Delete">🗑</button>
+        </div>
+      </div>
+      <div class="section-body">
+        <textarea class="section-content-editor" 
+                  onchange="updateSectionContent(${i}, this.value)"
+                  oninput="autoResizeTextarea(this)">${escHtml(sec.content)}</textarea>
+      </div>
+      ${sec.images && sec.images.length > 0 ? `
+        <div class="section-images">
+          ${sec.images.map((img, imgIdx) => `
+            <div class="section-image-container">
+              <img class="section-image-thumb" src="${img.url || img.dataUrl}" 
+                   onclick="previewImage('${img.url || img.dataUrl}')">
+              <div class="section-image-remove" onclick="removeSectionImage(${i},${imgIdx})">✕</div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+      <div class="section-footer">
+        <button class="btn btn-sm btn-outline" onclick="triggerSectionImageUpload(${i})">📷 Add Image</button>
+        <input type="file" id="secImg_${i}" accept="image/*" multiple style="display:none" 
+               onchange="handleSectionImages(${i}, this.files)">
+      </div>
+    </div>
+  `).join('');
+
+  // Auto-resize all textareas
+  list.querySelectorAll('.section-content-editor').forEach(autoResizeTextarea);
+}
+
+function autoResizeTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function updateSectionTitle(i, val) { state.sections[i].title = val; renderPreview(); }
+function updateSectionContent(i, val) { state.sections[i].content = val; renderPreview(); }
+function toggleSectionType(i) { 
+  state.sections[i].type = state.sections[i].type === 'steps' ? 'narrative' : 'steps'; 
+  renderSections(); renderPreview(); 
+}
+function removeSection(i) { state.sections.splice(i, 1); renderSections(); renderPreview(); }
+
+function addSection(type) {
+  state.sections.push({
+    id: `sec_${Date.now()}`,
+    title: type === 'steps' ? 'New Steps Section' : 'New Narrative Section',
+    type: type,
+    content: '',
+    images: [],
+    order: state.sections.length,
+  });
+  renderSections();
+  renderPreview();
+  // Scroll to new section
+  const list = document.getElementById('sectionsList');
+  list.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// Section image uploads
+function triggerSectionImageUpload(i) {
+  document.getElementById(`secImg_${i}`).click();
+}
+
+function handleSectionImages(sectionIdx, files) {
+  Array.from(files).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      state.sections[sectionIdx].images.push({ dataUrl: e.target.result, name: file.name, file });
+      renderSections();
+      renderPreview();
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function removeSectionImage(secIdx, imgIdx) {
+  state.sections[secIdx].images.splice(imgIdx, 1);
+  renderSections();
+  renderPreview();
+}
+
+function previewImage(url) {
+  document.getElementById('imageModalImg').src = url;
+  document.getElementById('imageModal').classList.add('active');
+}
+
+// ═══════════════════════════════════════════
+// DRAG & DROP REORDER
+// ═══════════════════════════════════════════
+let dragIdx = null;
+
+function dragStart(e, i) {
+  dragIdx = i;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function dragOver(e, i) {
+  e.preventDefault();
+  document.querySelectorAll('.section-card').forEach(c => c.classList.remove('drag-over'));
+  if (i !== dragIdx) e.currentTarget.classList.add('drag-over');
+}
+
+function dragDrop(e, i) {
+  e.preventDefault();
+  if (dragIdx === null || dragIdx === i) return;
+  const moved = state.sections.splice(dragIdx, 1)[0];
+  state.sections.splice(i, 0, moved);
+  renderSections();
+  renderPreview();
+}
+
+function dragEnd() {
+  dragIdx = null;
+  document.querySelectorAll('.section-card').forEach(c => {
+    c.classList.remove('dragging', 'drag-over');
+  });
+}
+
+// ═══════════════════════════════════════════
+// AI REVISION PER SECTION
+// ═══════════════════════════════════════════
+function openReviseModal(i) {
+  state.reviseTargetIdx = i;
+  document.getElementById('reviseInstruction').value = '';
+  document.getElementById('reviseModal').classList.add('active');
+}
+
+async function submitRevision() {
+  const i = state.reviseTargetIdx;
+  if (i === null) return;
+  const instruction = document.getElementById('reviseInstruction').value.trim();
+  if (!instruction) { toast('Tell AI how to revise this section.', 'error'); return; }
+
+  const btn = document.getElementById('reviseSubmitBtn');
+  btn.textContent = '⏳ Revising...';
+  btn.disabled = true;
+
+  const sec = state.sections[i];
+  const systemPrompt = `You revise sections of SOPs and documentation for Posillico, a construction company.
+Return ONLY the revised content — no JSON wrapping, no explanation, no backticks. Just the text.
+For "steps" type sections, use numbered steps.
+For "narrative" type sections, write paragraphs.`;
+
+  const userPrompt = `Section title: ${sec.title}
+Section type: ${sec.type}
+Current content:
+${sec.content}
+
+Revision instruction: ${instruction}
+
+Return ONLY the revised content:`;
+
+  try {
+    const revised = await callAI(systemPrompt, userPrompt);
+    state.sections[i].content = revised.trim();
+    renderSections();
+    renderPreview();
+    closeModal('reviseModal');
+    toast('Section revised!', 'success');
+  } catch (err) {
+    toast(`Revision error: ${err.message}`, 'error');
+  } finally {
+    btn.textContent = '✨ Revise';
+    btn.disabled = false;
+  }
+}
+
+// ═══════════════════════════════════════════
+// LIVE PREVIEW
+// ═══════════════════════════════════════════
+function renderPreview() {
+  const doc = document.getElementById('previewDoc');
+  if (!state.currentDraft || state.selectedTemplate === null) {
+    doc.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-3)">No document yet</div>';
+    return;
+  }
+  const template = state.templates[state.selectedTemplate];
+  const color = template.header_color || '#0057B8';
+  const title = document.getElementById('editorTitle')?.value || state.currentDraft.title;
+
+  const rightLogoHtml = template.right_logo 
+    ? `<img src="${LOGO_BASE}${template.right_logo}" alt="${template.name}" style="height:26px">` 
+    : '';
+
+  const sectionsHtml = state.sections.map(sec => {
+    let contentHtml = '';
+    if (sec.type === 'steps') {
+      // Parse numbered lines
+      const lines = sec.content.split('\n').filter(l => l.trim());
+      contentHtml = '<ol>' + lines.map(l => {
+        const clean = l.replace(/^\d+[\.\)]\s*/, '');
+        return `<li>${escHtml(clean)}</li>`;
+      }).join('') + '</ol>';
+    } else {
+      contentHtml = sec.content.split('\n\n').map(p => `<p>${escHtml(p)}</p>`).join('');
+    }
+    
+    const imagesHtml = sec.images?.length ? `
+      <div class="preview-section-images">
+        ${sec.images.map(img => `<img src="${img.url || img.dataUrl}">`).join('')}
+      </div>` : '';
+
+    return `
+      <div class="preview-section">
+        <div class="preview-section-heading" style="background:${color}15;color:${color};border-left:3px solid ${color}">${escHtml(sec.title)}</div>
+        <div class="preview-section-content">${contentHtml}</div>
+        ${imagesHtml}
+      </div>
+    `;
+  }).join('');
+
+  doc.innerHTML = `
+    <div class="preview-doc-header" style="border-bottom-color:${color}">
+      <img src="${LOGO_BASE}logo_posillico.png" alt="Posillico" style="height:26px">
+      ${rightLogoHtml}
+    </div>
+    <div class="preview-doc-body">
+      <div class="preview-doc-title">${escHtml(title)}</div>
+      ${sectionsHtml}
+    </div>
+  `;
+}
+
+function togglePreview() {
+  const panel = document.getElementById('previewPanel');
+  panel.style.display = panel.style.display === 'none' ? '' : 'none';
+}
+
+// ═══════════════════════════════════════════
+// SAVE TO SUPABASE
+// ═══════════════════════════════════════════
+async function saveCurrentDraft() {
+  if (!supabase) { toast('Supabase not connected.', 'error'); return; }
+  if (!state.currentDraft) return;
+
+  try {
+    const title = document.getElementById('editorTitle').value || state.currentDraft.title;
+    const draftData = {
+      title: title,
+      template_id: state.currentDraft.template_id,
+      doc_type: state.docType,
+      updated_at: new Date().toISOString(),
+    };
+
+    let draftId = state.currentDraft.id;
+
+    if (draftId) {
+      // Update existing
+      const { error } = await supabase.from('work_sop_drafts').update(draftData).eq('id', draftId);
+      if (error) throw error;
+    } else {
+      // Insert new
+      draftData.created_at = new Date().toISOString();
+      const { data, error } = await supabase.from('work_sop_drafts').insert(draftData).select();
+      if (error) throw error;
+      draftId = data[0].id;
+      state.currentDraft.id = draftId;
+    }
+
+    // Save sections — delete old, insert new
+    await supabase.from('work_sop_sections').delete().eq('draft_id', draftId);
+    
+    const sectionsToInsert = state.sections.map((sec, i) => ({
+      draft_id: draftId,
+      title: sec.title,
+      type: sec.type,
+      content: sec.content,
+      sort_order: i,
+    }));
+
+    if (sectionsToInsert.length > 0) {
+      const { data: insertedSections, error: secError } = await supabase
+        .from('work_sop_sections').insert(sectionsToInsert).select();
+      if (secError) throw secError;
+
+      // Upload section images
+      for (let si = 0; si < state.sections.length; si++) {
+        const sec = state.sections[si];
+        if (!sec.images?.length) continue;
+        const dbSection = insertedSections[si];
+        if (!dbSection) continue;
+
+        for (const img of sec.images) {
+          if (img.url) continue; // already uploaded
+          if (!img.file) continue;
+          
+          const filePath = `SOP_images/${draftId}/${dbSection.id}_${img.name}`;
+          const { error: upErr } = await supabase.storage.from(STORAGE_BUCKET)
+            .upload(filePath, img.file, { upsert: true });
+          
+          if (!upErr) {
+            const url = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${filePath}`;
+            img.url = url;
+            
+            await supabase.from('work_sop_section_images').insert({
+              section_id: dbSection.id,
+              image_url: url,
+              file_name: img.name,
+            });
+          }
+        }
+      }
+    }
+
+    await loadDrafts();
+    renderSidebarDrafts();
+    toast('Saved!', 'success');
+
+  } catch (err) {
+    toast(`Save error: ${err.message}`, 'error');
+    console.error(err);
+  }
+}
+
+// ═══════════════════════════════════════════
+// LOAD DRAFTS
+// ═══════════════════════════════════════════
+async function loadDrafts() {
+  if (!supabase) return;
+  try {
+    const { data, error } = await supabase
+      .from('work_sop_drafts')
+      .select('*')
+      .order('updated_at', { ascending: false });
+    if (error) throw error;
+    state.drafts = data || [];
+  } catch (e) {
+    console.log('Could not load drafts:', e.message);
+    state.drafts = [];
+  }
+}
+
+function renderSidebarDrafts() {
+  const container = document.getElementById('sidebarDrafts');
+  if (!state.drafts.length) {
+    container.innerHTML = '<div class="sidebar-item" style="color:var(--text-3);font-size:.8rem;padding-left:16px">No drafts yet</div>';
+    return;
+  }
+  container.innerHTML = state.drafts.slice(0, 15).map(d => `
+    <div class="sidebar-item" onclick="openDraft('${d.id}')">
+      <span class="icon">📄</span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(d.title)}</span>
+    </div>
+  `).join('');
+}
+
+function renderDraftsList() {
+  const container = document.getElementById('draftsList');
+  if (!state.drafts.length) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">📄</div><p>No saved drafts yet. Create a new document to get started!</p></div>';
+    return;
+  }
+  container.innerHTML = state.drafts.map(d => {
+    const tmpl = state.templates.find(t => t.id === d.template_id) || {};
+    const date = new Date(d.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    return `
+      <div class="draft-list-item" onclick="openDraft('${d.id}')">
+        <div class="draft-info">
+          <div class="draft-title">${escHtml(d.title)}</div>
+          <div class="draft-meta">${d.doc_type?.toUpperCase() || 'SOP'} · Updated ${date}</div>
+        </div>
+        <div class="draft-template-badge" style="border-color:${tmpl.header_color || '#ccc'};color:${tmpl.header_color || '#666'}">${tmpl.name || 'Template'}</div>
+        <button class="btn-icon btn-sm" onclick="event.stopPropagation();deleteDraft('${d.id}')" title="Delete">🗑</button>
+      </div>
+    `;
+  }).join('');
+}
+
+async function openDraft(id) {
+  if (!supabase) return;
+  try {
+    const { data: draft } = await supabase.from('work_sop_drafts').select('*').eq('id', id).single();
+    if (!draft) throw new Error('Draft not found');
+
+    const { data: sections } = await supabase
+      .from('work_sop_sections')
+      .select('*, work_sop_section_images(*)')
+      .eq('draft_id', id)
+      .order('sort_order');
+
+    state.currentDraft = draft;
+    state.docType = draft.doc_type || 'sop';
+
+    // Find template index
+    const tmplIdx = state.templates.findIndex(t => t.id === draft.template_id);
+    state.selectedTemplate = tmplIdx >= 0 ? tmplIdx : 0;
+
+    state.sections = (sections || []).map((sec, i) => ({
+      id: sec.id,
+      title: sec.title,
+      type: sec.type,
+      content: sec.content,
+      images: (sec.work_sop_section_images || []).map(img => ({
+        url: img.image_url,
+        name: img.file_name,
+      })),
+      order: i,
+    }));
+
+    document.getElementById('editorTitle').value = draft.title;
+    renderSections();
+    renderPreview();
+    showPage('editor');
+
+  } catch (err) {
+    toast(`Error loading draft: ${err.message}`, 'error');
+  }
+}
+
+async function deleteDraft(id) {
+  if (!confirm('Delete this draft?')) return;
+  try {
+    await supabase.from('work_sop_section_images').delete().in('section_id', 
+      (await supabase.from('work_sop_sections').select('id').eq('draft_id', id)).data?.map(s => s.id) || []
+    );
+    await supabase.from('work_sop_sections').delete().eq('draft_id', id);
+    await supabase.from('work_sop_drafts').delete().eq('id', id);
+    await loadDrafts();
+    renderSidebarDrafts();
+    renderDraftsList();
+    toast('Draft deleted.', 'info');
+  } catch (err) {
+    toast(`Delete error: ${err.message}`, 'error');
+  }
+}
+
+// Helper: lighten a hex color for shading backgrounds
+function lightenColor(hex, amount) {
+  hex = hex.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  const lr = Math.round(r + (255 - r) * amount);
+  const lg = Math.round(g + (255 - g) * amount);
+  const lb = Math.round(b + (255 - b) * amount);
+  return [lr, lg, lb].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+// ═══════════════════════════════════════════
+// DOCX EXPORT
+// ═══════════════════════════════════════════
+async function exportDocx() {
+  if (!state.currentDraft || state.selectedTemplate === null) return;
+  const template = state.templates[state.selectedTemplate];
+  const title = document.getElementById('editorTitle').value || state.currentDraft.title;
+  const color = (template.header_color || '#0057B8').replace('#', '');
+
+  toast('Generating .docx...', 'info');
+
+  try {
+    // Fetch logos as ArrayBuffers
+    const posLogoUrl = `${LOGO_BASE}logo_posillico.png`;
+    let posLogoBuffer = null;
+    let rightLogoBuffer = null;
+
+    try {
+      const resp = await fetch(posLogoUrl);
+      posLogoBuffer = await resp.arrayBuffer();
+    } catch (e) { console.log('Could not fetch Posillico logo'); }
+
+    if (template.right_logo) {
+      try {
+        const resp = await fetch(`${LOGO_BASE}${template.right_logo}`);
+        rightLogoBuffer = await resp.arrayBuffer();
+      } catch (e) { console.log('Could not fetch right logo'); }
+    }
+
+    // Build header children
+    const headerChildren = [];
+    const headerImgs = [];
+    if (posLogoBuffer) {
+      headerImgs.push(new docx.ImageRun({
+        type: 'png', data: posLogoBuffer,
+        transformation: { width: 120, height: 36 },
+        altText: { title: 'Posillico', description: 'Posillico Logo', name: 'posillico_logo' },
+      }));
+    }
+    if (rightLogoBuffer) {
+      headerImgs.push(new docx.TextRun({ text: '\t' }));
+      headerImgs.push(new docx.ImageRun({
+        type: 'png', data: rightLogoBuffer,
+        transformation: { width: 100, height: 30 },
+        altText: { title: template.name, description: `${template.name} Logo`, name: 'right_logo' },
+      }));
+    }
+
+    if (headerImgs.length > 0) {
+      headerChildren.push(new docx.Paragraph({
+        children: headerImgs,
+        tabStops: rightLogoBuffer ? [{ type: docx.TabStopType.RIGHT, position: docx.TabStopPosition.MAX }] : [],
+      }));
+    }
+
+    // Add colored divider line
+    headerChildren.push(new docx.Paragraph({
+      spacing: { before: 80 },
+      border: { bottom: { style: docx.BorderStyle.SINGLE, size: 8, color: color, space: 1 } },
+      children: [],
+    }));
+
+    // Build doc content
+    const docChildren = [];
+
+    // Title
+    docChildren.push(new docx.Paragraph({
+      spacing: { before: 200, after: 300 },
+      children: [new docx.TextRun({ text: title, bold: true, size: 32, font: 'Noto Sans', color: '1a1f2e' })],
+    }));
+
+    // Sections
+    for (const sec of state.sections) {
+      // Section heading — compute light fill from header color
+      const lightFill = lightenColor(color, 0.88);
+      docChildren.push(new docx.Paragraph({
+        spacing: { before: 240, after: 120 },
+        shading: { fill: lightFill, type: docx.ShadingType.CLEAR },
+        border: { left: { style: docx.BorderStyle.SINGLE, size: 6, color: color, space: 4 } },
+        children: [new docx.TextRun({ text: sec.title, bold: true, size: 24, font: 'Noto Sans', color: color })],
+      }));
+
+      // Section content
+      if (sec.type === 'steps') {
+        const lines = sec.content.split('\n').filter(l => l.trim());
+        lines.forEach((line, li) => {
+          const clean = line.replace(/^\d+[\.\)]\s*/, '');
+          docChildren.push(new docx.Paragraph({
+            spacing: { after: 60 },
+            children: [
+              new docx.TextRun({ text: `${li + 1}. `, bold: true, size: 20, font: 'Noto Sans' }),
+              new docx.TextRun({ text: clean, size: 20, font: 'Noto Sans' }),
+            ],
+          }));
+        });
+      } else {
+        const paragraphs = sec.content.split('\n\n').filter(p => p.trim());
+        paragraphs.forEach(p => {
+          docChildren.push(new docx.Paragraph({
+            spacing: { after: 120 },
+            children: [new docx.TextRun({ text: p.replace(/\n/g, ' '), size: 20, font: 'Noto Sans' })],
+          }));
+        });
+      }
+
+      // Section images
+      if (sec.images?.length) {
+        for (const img of sec.images) {
+          try {
+            let imgBuffer;
+            if (img.url) {
+              const resp = await fetch(img.url);
+              imgBuffer = await resp.arrayBuffer();
+            } else if (img.dataUrl) {
+              const base64 = img.dataUrl.split(',')[1];
+              const binary = atob(base64);
+              const bytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+              imgBuffer = bytes.buffer;
+            }
+            if (imgBuffer) {
+              const imgType = (img.name || '').toLowerCase().endsWith('.png') ? 'png' : 'jpg';
+              docChildren.push(new docx.Paragraph({
+                spacing: { before: 80, after: 80 },
+                children: [new docx.ImageRun({
+                  type: imgType, data: imgBuffer,
+                  transformation: { width: 450, height: 280 },
+                  altText: { title: img.name || 'Image', description: 'Section image', name: img.name || 'img' },
+                })],
+              }));
+            }
+          } catch (e) { console.log('Could not embed image:', e.message); }
+        }
+      }
+    }
+
+    // Build document
+    const doc = new docx.Document({
+      styles: {
+        default: {
+          document: { run: { font: 'Noto Sans', size: 20 } },
+        },
+      },
+      sections: [{
+        properties: {
+          page: {
+            size: { width: 12240, height: 15840 },
+            margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+          },
+        },
+        headers: {
+          default: new docx.Header({ children: headerChildren }),
+        },
+        footers: {
+          default: new docx.Footer({
+            children: [new docx.Paragraph({
+              children: [
+                new docx.TextRun({ text: 'Posillico Inc.', size: 16, font: 'Noto Sans', color: '999999' }),
+                new docx.TextRun({ text: '\t' }),
+                new docx.TextRun({ text: 'Page ', size: 16, font: 'Noto Sans', color: '999999' }),
+                new docx.TextRun({ children: [docx.PageNumber.CURRENT], size: 16, font: 'Noto Sans', color: '999999' }),
+              ],
+              tabStops: [{ type: docx.TabStopType.RIGHT, position: docx.TabStopPosition.MAX }],
+            })],
+          }),
+        },
+        children: docChildren,
+      }],
+    });
+
+    const buffer = await docx.Packer.toBlob(doc);
+    const fileName = `${title.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_')}.docx`;
+    saveAs(buffer, fileName);
+    toast('Exported!', 'success');
+
+  } catch (err) {
+    toast(`Export error: ${err.message}`, 'error');
+    console.error(err);
+  }
+}
+
+// ═══════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════
+function showPage(name) {
+  // Hide all pages
+  document.querySelectorAll('.page, .editor-page').forEach(p => p.classList.remove('active'));
+  
+  if (name === 'editor') {
+    document.getElementById('page-editor').classList.add('active');
+  } else {
+    const page = document.getElementById(`page-${name}`);
+    if (page) page.classList.add('active');
+  }
+
+  // Render drafts list if showing drafts page
+  if (name === 'drafts') renderDraftsList();
+  
+  // Update topbar buttons
+  document.querySelectorAll('.topbar-btn').forEach(b => b.classList.remove('active'));
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('active');
+}
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.classList.remove('active');
+  });
+});
+
+// ═══════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════
+function toast(msg, type = 'info') {
+  const container = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3500);
+}
+
+// ═══════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════
+init();
+</script>
+</body>
+</html>
