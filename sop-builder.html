@@ -1230,9 +1230,11 @@ function lightenColor(hex, amount) {
 async function exportDocx() {
   if (!state.currentDraft || state.selectedTemplate === null) return;
   
-  // Check docx library loaded
-  if (typeof docx === 'undefined') {
-    toast('Word export library is still loading — try again in a moment.', 'error');
+  // Check docx library loaded — try multiple global names
+  const docxLib = window.docx || window.Docx || window.DOCX;
+  if (!docxLib) {
+    console.log('docx globals available:', Object.keys(window).filter(k => k.toLowerCase().includes('docx')));
+    toast('Word export library failed to load. Check your internet connection and refresh.', 'error');
     return;
   }
   
@@ -1264,15 +1266,15 @@ async function exportDocx() {
     const headerChildren = [];
     const headerImgs = [];
     if (posLogoBuffer) {
-      headerImgs.push(new docx.ImageRun({
+      headerImgs.push(new docxLib.ImageRun({
         type: 'png', data: posLogoBuffer,
         transformation: { width: 120, height: 36 },
         altText: { title: 'Posillico', description: 'Posillico Logo', name: 'posillico_logo' },
       }));
     }
     if (rightLogoBuffer) {
-      headerImgs.push(new docx.TextRun({ text: '\t' }));
-      headerImgs.push(new docx.ImageRun({
+      headerImgs.push(new docxLib.TextRun({ text: '\t' }));
+      headerImgs.push(new docxLib.ImageRun({
         type: 'png', data: rightLogoBuffer,
         transformation: { width: 100, height: 30 },
         altText: { title: template.name, description: `${template.name} Logo`, name: 'right_logo' },
@@ -1280,16 +1282,16 @@ async function exportDocx() {
     }
 
     if (headerImgs.length > 0) {
-      headerChildren.push(new docx.Paragraph({
+      headerChildren.push(new docxLib.Paragraph({
         children: headerImgs,
-        tabStops: rightLogoBuffer ? [{ type: docx.TabStopType.RIGHT, position: docx.TabStopPosition.MAX }] : [],
+        tabStops: rightLogoBuffer ? [{ type: docxLib.TabStopType.RIGHT, position: docxLib.TabStopPosition.MAX }] : [],
       }));
     }
 
     // Add colored divider line
-    headerChildren.push(new docx.Paragraph({
+    headerChildren.push(new docxLib.Paragraph({
       spacing: { before: 80 },
-      border: { bottom: { style: docx.BorderStyle.SINGLE, size: 8, color: color, space: 1 } },
+      border: { bottom: { style: docxLib.BorderStyle.SINGLE, size: 8, color: color, space: 1 } },
       children: [],
     }));
 
@@ -1297,20 +1299,20 @@ async function exportDocx() {
     const docChildren = [];
 
     // Title
-    docChildren.push(new docx.Paragraph({
+    docChildren.push(new docxLib.Paragraph({
       spacing: { before: 200, after: 300 },
-      children: [new docx.TextRun({ text: title, bold: true, size: 32, font: 'Noto Sans', color: '1a1f2e' })],
+      children: [new docxLib.TextRun({ text: title, bold: true, size: 32, font: 'Noto Sans', color: '1a1f2e' })],
     }));
 
     // Sections
     for (const sec of state.sections) {
       // Section heading — compute light fill from header color
       const lightFill = lightenColor(color, 0.88);
-      docChildren.push(new docx.Paragraph({
+      docChildren.push(new docxLib.Paragraph({
         spacing: { before: 240, after: 120 },
-        shading: { fill: lightFill, type: docx.ShadingType.CLEAR },
-        border: { left: { style: docx.BorderStyle.SINGLE, size: 6, color: color, space: 4 } },
-        children: [new docx.TextRun({ text: sec.title, bold: true, size: 24, font: 'Noto Sans', color: color })],
+        shading: { fill: lightFill, type: docxLib.ShadingType.CLEAR },
+        border: { left: { style: docxLib.BorderStyle.SINGLE, size: 6, color: color, space: 4 } },
+        children: [new docxLib.TextRun({ text: sec.title, bold: true, size: 24, font: 'Noto Sans', color: color })],
       }));
 
       // Section content
@@ -1318,20 +1320,20 @@ async function exportDocx() {
         const lines = sec.content.split('\n').filter(l => l.trim());
         lines.forEach((line, li) => {
           const clean = line.replace(/^\d+[\.\)]\s*/, '');
-          docChildren.push(new docx.Paragraph({
+          docChildren.push(new docxLib.Paragraph({
             spacing: { after: 60 },
             children: [
-              new docx.TextRun({ text: `${li + 1}. `, bold: true, size: 20, font: 'Noto Sans' }),
-              new docx.TextRun({ text: clean, size: 20, font: 'Noto Sans' }),
+              new docxLib.TextRun({ text: `${li + 1}. `, bold: true, size: 20, font: 'Noto Sans' }),
+              new docxLib.TextRun({ text: clean, size: 20, font: 'Noto Sans' }),
             ],
           }));
         });
       } else {
         const paragraphs = sec.content.split('\n\n').filter(p => p.trim());
         paragraphs.forEach(p => {
-          docChildren.push(new docx.Paragraph({
+          docChildren.push(new docxLib.Paragraph({
             spacing: { after: 120 },
-            children: [new docx.TextRun({ text: p.replace(/\n/g, ' '), size: 20, font: 'Noto Sans' })],
+            children: [new docxLib.TextRun({ text: p.replace(/\n/g, ' '), size: 20, font: 'Noto Sans' })],
           }));
         });
       }
@@ -1353,9 +1355,9 @@ async function exportDocx() {
             }
             if (imgBuffer) {
               const imgType = (img.name || '').toLowerCase().endsWith('.png') ? 'png' : 'jpg';
-              docChildren.push(new docx.Paragraph({
+              docChildren.push(new docxLib.Paragraph({
                 spacing: { before: 80, after: 80 },
-                children: [new docx.ImageRun({
+                children: [new docxLib.ImageRun({
                   type: imgType, data: imgBuffer,
                   transformation: { width: 450, height: 280 },
                   altText: { title: img.name || 'Image', description: 'Section image', name: img.name || 'img' },
@@ -1368,7 +1370,7 @@ async function exportDocx() {
     }
 
     // Build document
-    const doc = new docx.Document({
+    const doc = new docxLib.Document({
       styles: {
         default: {
           document: { run: { font: 'Noto Sans', size: 20 } },
@@ -1382,18 +1384,18 @@ async function exportDocx() {
           },
         },
         headers: {
-          default: new docx.Header({ children: headerChildren }),
+          default: new docxLib.Header({ children: headerChildren }),
         },
         footers: {
-          default: new docx.Footer({
-            children: [new docx.Paragraph({
+          default: new docxLib.Footer({
+            children: [new docxLib.Paragraph({
               children: [
-                new docx.TextRun({ text: 'Posillico Inc.', size: 16, font: 'Noto Sans', color: '999999' }),
-                new docx.TextRun({ text: '\t' }),
-                new docx.TextRun({ text: 'Page ', size: 16, font: 'Noto Sans', color: '999999' }),
-                new docx.TextRun({ children: [docx.PageNumber.CURRENT], size: 16, font: 'Noto Sans', color: '999999' }),
+                new docxLib.TextRun({ text: 'Posillico Inc.', size: 16, font: 'Noto Sans', color: '999999' }),
+                new docxLib.TextRun({ text: '\t' }),
+                new docxLib.TextRun({ text: 'Page ', size: 16, font: 'Noto Sans', color: '999999' }),
+                new docxLib.TextRun({ children: [docxLib.PageNumber.CURRENT], size: 16, font: 'Noto Sans', color: '999999' }),
               ],
-              tabStops: [{ type: docx.TabStopType.RIGHT, position: docx.TabStopPosition.MAX }],
+              tabStops: [{ type: docxLib.TabStopType.RIGHT, position: docxLib.TabStopPosition.MAX }],
             })],
           }),
         },
@@ -1401,7 +1403,7 @@ async function exportDocx() {
       }],
     });
 
-    const buffer = await docx.Packer.toBlob(doc);
+    const buffer = await docxLib.Packer.toBlob(doc);
     const fileName = `${title.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_')}.docx`;
     saveAs(buffer, fileName);
     toast('Exported!', 'success');
