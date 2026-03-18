@@ -1230,8 +1230,8 @@ function lightenColor(hex, amount) {
 async function exportDocx() {
   if (!state.currentDraft || state.selectedTemplate === null) return;
   
-  // Check docx library loaded — try multiple global names
-  const docxLib = window.docx || window.Docx || window.DOCX;
+  // Check docx library loaded — v9 UMD exposes as window.exportDocx
+  const docxLib = window.exportDocx || window.docx || window.Docx;
   if (!docxLib) {
     console.log('docx globals available:', Object.keys(window).filter(k => k.toLowerCase().includes('docx')));
     toast('Word export library failed to load. Check your internet connection and refresh.', 'error');
