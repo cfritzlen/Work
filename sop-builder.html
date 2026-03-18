@@ -6,7 +6,7 @@
 <title>SOP Builder — Posillico</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.2.0/docx.min.js"></script>
+<script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <style>
 /* ── RESET & BASE ── */
@@ -277,6 +277,33 @@ a{color:var(--pos-blue);text-decoration:none}
           <button class="doc-type-btn" data-type="both" onclick="setDocType(this)">Both</button>
         </div>
 
+        <!-- Write-up Subtype (only shows when Write-up or Both selected) -->
+        <div class="writeup-options" id="writeupOptions" style="display:none;margin-bottom:20px">
+          <div style="display:flex;gap:16px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem;padding:10px 16px;border:2px solid var(--border);border-radius:var(--radius);transition:var(--transition)" class="writeup-subtype-label" data-sub="brand_new">
+              <input type="radio" name="writeupSubtype" value="brand_new" checked onchange="setWriteupSubtype(this.value)">
+              <div><strong>Brand New</strong><br><span style="color:var(--text-2);font-size:.78rem">Documenting something from scratch</span></div>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem;padding:10px 16px;border:2px solid var(--border);border-radius:var(--radius);transition:var(--transition)" class="writeup-subtype-label" data-sub="change_notice">
+              <input type="radio" name="writeupSubtype" value="change_notice" onchange="setWriteupSubtype(this.value)">
+              <div><strong>Change Notice</strong><br><span style="color:var(--text-2);font-size:.78rem">What changed, why, and what to do now</span></div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Tone Selector -->
+        <div style="margin-bottom:24px">
+          <label style="font-size:.85rem;font-weight:500;display:flex;align-items:center;gap:10px">
+            Tone:
+            <select id="toneSelect" style="padding:6px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.85rem;font-family:inherit">
+              <option value="concise" selected>Clear & Concise (default)</option>
+              <option value="detailed">Detailed & Thorough</option>
+              <option value="casual">Casual & Friendly</option>
+              <option value="formal">Formal & Technical</option>
+            </select>
+          </label>
+        </div>
+
         <!-- Template Grid -->
         <div class="template-grid" id="templateGrid"></div>
 
@@ -406,12 +433,13 @@ const LOGO_BASE = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/Lo
 
 // Initialize Supabase — window.supabase is the CDN library, so our client uses 'sb'
 const sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, 
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6anp6dWpyanFqYWNiZmJ3Y3ZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzgxNjQ3MTcsImV4cCI6MjA1Mzc0MDcxN30.VPgSq6MbyVJPSMG-44tRSvkTGGKnqBqyakbJSgmzVE4'
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6anp6dWpyanFqYWNiZmJ3Y3ZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAyODg0NjYsImV4cCI6MjA4NTg2NDQ2Nn0.dwzx43oEMtLVha7WoLWqAkgRPMLzbE0NaOurS_JWyhY'
 ) : null;
 
 // ── STATE ──
 let state = {
   docType: 'sop',          // sop | writeup | both
+  writeupSubtype: 'brand_new', // brand_new | change_notice
   selectedTemplate: null,
   templates: [],
   currentDraft: null,
@@ -495,6 +523,18 @@ function setDocType(btn) {
   document.querySelectorAll('.doc-type-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   state.docType = btn.dataset.type;
+  // Show writeup subtype options when Write-up or Both is selected
+  const writeupOpts = document.getElementById('writeupOptions');
+  writeupOpts.style.display = (state.docType === 'writeup' || state.docType === 'both') ? '' : 'none';
+}
+
+function setWriteupSubtype(val) {
+  state.writeupSubtype = val;
+  // Highlight selected label
+  document.querySelectorAll('.writeup-subtype-label').forEach(l => {
+    l.style.borderColor = l.dataset.sub === val ? 'var(--pos-blue)' : 'var(--border)';
+    l.style.background = l.dataset.sub === val ? 'var(--blue-light)' : '';
+  });
 }
 
 // ═══════════════════════════════════════════
@@ -614,6 +654,27 @@ async function handleDraftIt() {
   const docTypeLabel = state.docType === 'both' ? 'SOP (step-by-step how-to) AND a Write-up (narrative documentation)' 
     : state.docType === 'sop' ? 'SOP (step-by-step how-to)' : 'Write-up (narrative documentation)';
 
+  // Tone instructions
+  const tone = document.getElementById('toneSelect').value;
+  const toneMap = {
+    concise: 'Be CLEAR and CONCISE. Short sentences. No filler words. Every sentence must earn its place. If it can be said in 5 words, do not use 15.',
+    detailed: 'Be thorough and detailed. Include context, reasoning, and helpful notes. Still organized and readable.',
+    casual: 'Be casual and friendly, like explaining to a coworker over coffee. Still clear and practical.',
+    formal: 'Be formal and technical. Use precise terminology. Suitable for compliance or executive documentation.',
+  };
+  const toneInstruction = toneMap[tone] || toneMap.concise;
+
+  // Change Notice context
+  let changeNoticeContext = '';
+  if ((state.docType === 'writeup' || state.docType === 'both') && state.writeupSubtype === 'change_notice') {
+    changeNoticeContext = `\nThis is a CHANGE NOTICE write-up. Structure it as:
+1. A "What's Changing" section — brief summary of the change
+2. A "Why" section — one or two sentences on the reason
+3. A "What Was It Before" section — how it used to work (keep short)
+4. A "What To Do Now" section — clear steps or new process
+Keep the whole thing tight and scannable.`;
+  }
+
   // Build image descriptions for context
   let imageContext = '';
   if (state.dropZoneFiles.length > 0) {
@@ -624,10 +685,11 @@ async function handleDraftIt() {
   }
 
   const systemPrompt = `You are an SOP/documentation writer for Posillico, a construction company. 
-You produce clear, practical documents for field and office teams.
-Write in a professional but approachable tone. Use "Noto Sans" style — clean and direct.
-For SOPs: Write numbered steps. Each step should be clear and actionable.
-For Write-ups: Write narrative paragraphs with context and detail.
+You produce documents for field and office teams.
+${toneInstruction}
+For SOPs: Write numbered steps. Each step = one clear action. No rambling.
+For Write-ups: Write short, focused paragraphs. Get to the point fast.
+${changeNoticeContext}
 
 RESPOND ONLY WITH VALID JSON. No markdown, no backticks, no explanation.
 The JSON must be an array of section objects:
@@ -635,11 +697,11 @@ The JSON must be an array of section objects:
   {
     "title": "Section Title",
     "type": "steps" or "narrative",
-    "content": "The section content. For steps, use numbered lines like:\\n1. Do this\\n2. Then do that\\nFor narrative, write paragraphs."
+    "content": "The section content. For steps, use numbered lines like:\\n1. Do this\\n2. Then do that\\nFor narrative, write short paragraphs."
   }
 ]
 
-Generate 3-6 sections. Each section should have a descriptive title.`;
+Generate 3-6 sections. Keep section titles short and descriptive.`;
 
   const userPrompt = `Create a ${docTypeLabel} about: ${overview}
 Template: ${template.name}
@@ -860,10 +922,12 @@ async function submitRevision() {
   btn.disabled = true;
 
   const sec = state.sections[i];
+  const tone = document.getElementById('toneSelect')?.value || 'concise';
+  const toneNote = tone === 'concise' ? ' Be clear and concise — no filler.' : '';
   const systemPrompt = `You revise sections of SOPs and documentation for Posillico, a construction company.
-Return ONLY the revised content — no JSON wrapping, no explanation, no backticks. Just the text.
+Return ONLY the revised content — no JSON wrapping, no explanation, no backticks. Just the text.${toneNote}
 For "steps" type sections, use numbered steps.
-For "narrative" type sections, write paragraphs.`;
+For "narrative" type sections, write short focused paragraphs.`;
 
   const userPrompt = `Section title: ${sec.title}
 Section type: ${sec.type}
@@ -1165,6 +1229,13 @@ function lightenColor(hex, amount) {
 // ═══════════════════════════════════════════
 async function exportDocx() {
   if (!state.currentDraft || state.selectedTemplate === null) return;
+  
+  // Check docx library loaded
+  if (typeof docx === 'undefined') {
+    toast('Word export library is still loading — try again in a moment.', 'error');
+    return;
+  }
+  
   const template = state.templates[state.selectedTemplate];
   const title = document.getElementById('editorTitle').value || state.currentDraft.title;
   const color = (template.header_color || '#0057B8').replace('#', '');
