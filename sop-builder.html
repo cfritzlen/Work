@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -405,9 +404,8 @@ const SUPABASE_ANON_KEY = localStorage.getItem('sop_supabase_key') || '';
 const STORAGE_BUCKET = 'Work';
 const LOGO_BASE = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/Logos/`;
 
-// Initialize Supabase — we'll use the anon key from the project
-// Since this is a public bucket, we use the anon key
-const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, 
+// Initialize Supabase — window.supabase is the CDN library, so our client uses 'sb'
+const sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, 
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6anp6dWpyanFqYWNiZmJ3Y3ZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzgxNjQ3MTcsImV4cCI6MjA1Mzc0MDcxN30.VPgSq6MbyVJPSMG-44tRSvkTGGKnqBqyakbJSgmzVE4'
 ) : null;
 
@@ -449,8 +447,8 @@ async function init() {
 // ═══════════════════════════════════════════
 async function loadTemplates() {
   try {
-    if (!supabase) throw new Error('No supabase');
-    const { data, error } = await supabase.from('work_sop_templates').select('*');
+    if (!sb) throw new Error('No supabase');
+    const { data, error } = await sb.from('work_sop_templates').select('*');
     if (error) throw error;
     if (data && data.length > 0) {
       state.templates = data;
@@ -956,7 +954,7 @@ function togglePreview() {
 // SAVE TO SUPABASE
 // ═══════════════════════════════════════════
 async function saveCurrentDraft() {
-  if (!supabase) { toast('Supabase not connected.', 'error'); return; }
+  if (!sb) { toast('Supabase not connected.', 'error'); return; }
   if (!state.currentDraft) return;
 
   try {
@@ -972,19 +970,19 @@ async function saveCurrentDraft() {
 
     if (draftId) {
       // Update existing
-      const { error } = await supabase.from('work_sop_drafts').update(draftData).eq('id', draftId);
+      const { error } = await sb.from('work_sop_drafts').update(draftData).eq('id', draftId);
       if (error) throw error;
     } else {
       // Insert new
       draftData.created_at = new Date().toISOString();
-      const { data, error } = await supabase.from('work_sop_drafts').insert(draftData).select();
+      const { data, error } = await sb.from('work_sop_drafts').insert(draftData).select();
       if (error) throw error;
       draftId = data[0].id;
       state.currentDraft.id = draftId;
     }
 
     // Save sections — delete old, insert new
-    await supabase.from('work_sop_sections').delete().eq('draft_id', draftId);
+    await sb.from('work_sop_sections').delete().eq('draft_id', draftId);
     
     const sectionsToInsert = state.sections.map((sec, i) => ({
       draft_id: draftId,
@@ -995,7 +993,7 @@ async function saveCurrentDraft() {
     }));
 
     if (sectionsToInsert.length > 0) {
-      const { data: insertedSections, error: secError } = await supabase
+      const { data: insertedSections, error: secError } = await sb
         .from('work_sop_sections').insert(sectionsToInsert).select();
       if (secError) throw secError;
 
@@ -1011,14 +1009,14 @@ async function saveCurrentDraft() {
           if (!img.file) continue;
           
           const filePath = `SOP_images/${draftId}/${dbSection.id}_${img.name}`;
-          const { error: upErr } = await supabase.storage.from(STORAGE_BUCKET)
+          const { error: upErr } = await sb.storage.from(STORAGE_BUCKET)
             .upload(filePath, img.file, { upsert: true });
           
           if (!upErr) {
             const url = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${filePath}`;
             img.url = url;
             
-            await supabase.from('work_sop_section_images').insert({
+            await sb.from('work_sop_section_images').insert({
               section_id: dbSection.id,
               image_url: url,
               file_name: img.name,
@@ -1042,9 +1040,9 @@ async function saveCurrentDraft() {
 // LOAD DRAFTS
 // ═══════════════════════════════════════════
 async function loadDrafts() {
-  if (!supabase) return;
+  if (!sb) return;
   try {
-    const { data, error } = await supabase
+    const { data, error } = await sb
       .from('work_sop_drafts')
       .select('*')
       .order('updated_at', { ascending: false });
@@ -1093,12 +1091,12 @@ function renderDraftsList() {
 }
 
 async function openDraft(id) {
-  if (!supabase) return;
+  if (!sb) return;
   try {
-    const { data: draft } = await supabase.from('work_sop_drafts').select('*').eq('id', id).single();
+    const { data: draft } = await sb.from('work_sop_drafts').select('*').eq('id', id).single();
     if (!draft) throw new Error('Draft not found');
 
-    const { data: sections } = await supabase
+    const { data: sections } = await sb
       .from('work_sop_sections')
       .select('*, work_sop_section_images(*)')
       .eq('draft_id', id)
@@ -1136,11 +1134,11 @@ async function openDraft(id) {
 async function deleteDraft(id) {
   if (!confirm('Delete this draft?')) return;
   try {
-    await supabase.from('work_sop_section_images').delete().in('section_id', 
-      (await supabase.from('work_sop_sections').select('id').eq('draft_id', id)).data?.map(s => s.id) || []
+    await sb.from('work_sop_section_images').delete().in('section_id', 
+      (await sb.from('work_sop_sections').select('id').eq('draft_id', id)).data?.map(s => s.id) || []
     );
-    await supabase.from('work_sop_sections').delete().eq('draft_id', id);
-    await supabase.from('work_sop_drafts').delete().eq('id', id);
+    await sb.from('work_sop_sections').delete().eq('draft_id', id);
+    await sb.from('work_sop_drafts').delete().eq('id', id);
     await loadDrafts();
     renderSidebarDrafts();
     renderDraftsList();
