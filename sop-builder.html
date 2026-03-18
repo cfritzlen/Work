@@ -6,7 +6,7 @@
 <title>SOP Builder — Posillico</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/docx@9.1.1/build/index.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <style>
 /* ── RESET & BASE ── */
@@ -1230,9 +1230,11 @@ function lightenColor(hex, amount) {
 async function exportDocx() {
   if (!state.currentDraft || state.selectedTemplate === null) return;
   
-  // Check docx library loaded — v9 UMD exposes as window.exportDocx
-  const docxLib = window.exportDocx || window.docx || window.Docx;
-  if (!docxLib) {
+  // Check docx library loaded
+  const docxLib = window.docx || window.exportDocx;
+  if (!docxLib || !docxLib.Document) {
+    console.log('docx globals:', Object.keys(window).filter(k => k.toLowerCase().includes('docx')));
+    if (docxLib) console.log('docxLib keys:', Object.keys(docxLib).slice(0, 20));
     console.log('docx globals available:', Object.keys(window).filter(k => k.toLowerCase().includes('docx')));
     toast('Word export library failed to load. Check your internet connection and refresh.', 'error');
     return;
