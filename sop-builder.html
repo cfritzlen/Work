@@ -1237,10 +1237,6 @@ async function handleExportDocx() {
     toast('Word export library failed to load. Refresh and try again.', 'error');
     return;
   }
-    console.log('docx globals available:', Object.keys(window).filter(k => k.toLowerCase().includes('docx')));
-    toast('Word export library failed to load. Check your internet connection and refresh.', 'error');
-    return;
-  }
   
   const template = state.templates[state.selectedTemplate];
   const title = document.getElementById('editorTitle').value || state.currentDraft.title;
