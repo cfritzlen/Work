@@ -6,7 +6,7 @@
 <title>SOP Builder — Posillico</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.umd.js"></script>
+<script src="https://unpkg.com/docx@7.8.2/build/index.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <style>
 /* ── RESET & BASE ── */
@@ -1231,10 +1231,24 @@ async function exportDocx() {
   if (!state.currentDraft || state.selectedTemplate === null) return;
   
   // Check docx library loaded
-  const docxLib = window.docx || window.exportDocx;
+  let docxLib = window.docx || window.exportDocx;
+  // Some UMD builds nest under .default or the function itself has properties
+  if (docxLib && !docxLib.Document) {
+    if (docxLib.default) docxLib = docxLib.default;
+  }
   if (!docxLib || !docxLib.Document) {
     console.log('docx globals:', Object.keys(window).filter(k => k.toLowerCase().includes('docx')));
-    if (docxLib) console.log('docxLib keys:', Object.keys(docxLib).slice(0, 20));
+    if (window.exportDocx) {
+      console.log('exportDocx type:', typeof window.exportDocx);
+      console.log('exportDocx keys:', Object.keys(window.exportDocx));
+      console.log('exportDocx.default?', window.exportDocx.default);
+      console.log('exportDocx proto:', Object.getOwnPropertyNames(window.exportDocx));
+      // Try iterating all properties including non-enumerable
+      const allProps = [];
+      for (let key in window.exportDocx) allProps.push(key);
+      console.log('exportDocx for-in keys:', allProps);
+      console.log('exportDocx toString:', window.exportDocx.toString().substring(0, 200));
+    }
     console.log('docx globals available:', Object.keys(window).filter(k => k.toLowerCase().includes('docx')));
     toast('Word export library failed to load. Check your internet connection and refresh.', 'error');
     return;
