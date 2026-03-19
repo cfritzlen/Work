@@ -489,7 +489,17 @@ async function loadTemplates() {
     const { data, error } = await sb.from('work_sop_templates').select('*');
     if (error) throw error;
     if (data && data.length > 0) {
-      state.templates = data;
+      // Merge DB data with defaults — fill in any missing fields (like right_logo)
+      state.templates = data.map(dbT => {
+        const fallback = TEMPLATE_DEFAULTS.find(d => 
+          d.name.toLowerCase() === (dbT.name || '').toLowerCase()
+        );
+        if (fallback) {
+          return { ...fallback, ...dbT, right_logo: dbT.right_logo || fallback.right_logo };
+        }
+        return dbT;
+      });
+      console.log('Templates loaded from DB (merged with defaults):', state.templates.map(t => t.name + ' → ' + t.right_logo));
       return;
     }
   } catch (e) {
