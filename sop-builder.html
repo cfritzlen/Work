@@ -498,6 +498,32 @@ async function loadTemplates() {
   state.templates = TEMPLATE_DEFAULTS;
 }
 
+// Pre-load a logo URL as ArrayBuffer for docx export (avoids CORS issues at export time)
+async function fetchLogoBuffer(url) {
+  try {
+    const resp = await fetch(url, { mode: 'cors' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const buf = await resp.arrayBuffer();
+    console.log('Logo loaded:', url, buf.byteLength, 'bytes');
+    return buf;
+  } catch(e) {
+    console.warn('Logo fetch failed:', url, e.message);
+    return null;
+  }
+}
+
+// Cache logo buffers so they're ready at export time
+const logoCache = {};
+async function ensureLogosLoaded(template) {
+  const posKey = 'logo_posillico.png';
+  if (!logoCache[posKey]) {
+    logoCache[posKey] = await fetchLogoBuffer(`${LOGO_BASE}${posKey}`);
+  }
+  if (template.right_logo && !logoCache[template.right_logo]) {
+    logoCache[template.right_logo] = await fetchLogoBuffer(`${LOGO_BASE}${template.right_logo}`);
+  }
+}
+
 function renderTemplateGrid() {
   const grid = document.getElementById('templateGrid');
   grid.innerHTML = state.templates.map((t, i) => {
@@ -524,6 +550,8 @@ function selectTemplate(idx) {
   document.querySelectorAll('.template-card').forEach((c, i) => {
     c.classList.toggle('selected', i === idx);
   });
+  // Pre-load logos for export
+  ensureLogosLoaded(state.templates[idx]);
 }
 
 // ═══════════════════════════════════════════
@@ -1255,28 +1283,10 @@ async function handleExportDocx() {
   toast('Generating .docx...', 'info');
 
   try {
-    // Fetch logos as ArrayBuffers
-    const posLogoUrl = `${LOGO_BASE}logo_posillico.png`;
-    let posLogoBuffer = null;
-    let rightLogoBuffer = null;
-
-    try {
-      const resp = await fetch(posLogoUrl);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      posLogoBuffer = await resp.arrayBuffer();
-      console.log('Posillico logo fetched, size:', posLogoBuffer.byteLength);
-    } catch (e) { console.warn('Could not fetch Posillico logo:', e.message); }
-
-    if (template.right_logo) {
-      const rightUrl = `${LOGO_BASE}${template.right_logo}`;
-      console.log('Fetching right logo from:', rightUrl);
-      try {
-        const resp = await fetch(rightUrl);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        rightLogoBuffer = await resp.arrayBuffer();
-        console.log('Right logo fetched, size:', rightLogoBuffer.byteLength);
-      } catch (e) { console.warn('Could not fetch right logo:', e.message); }
-    }
+    // Ensure logos are loaded (may already be cached from template selection)
+    await ensureLogosLoaded(template);
+    const posLogoBuffer = logoCache['logo_posillico.png'] ? logoCache['logo_posillico.png'].slice(0) : null;
+    const rightLogoBuffer = (template.right_logo && logoCache[template.right_logo]) ? logoCache[template.right_logo].slice(0) : null;
 
     // Build header children
     const headerChildren = [];
@@ -1322,11 +1332,9 @@ async function handleExportDocx() {
 
     // Sections
     for (const sec of state.sections) {
-      // Section heading — compute light fill from header color
-      const lightFill = lightenColor(color, 0.88);
+      // Section heading — colored text + left border, no background
       docChildren.push(new docxFinal.Paragraph({
         spacing: { before: 240, after: 120 },
-        shading: { fill: lightFill, type: docxFinal.ShadingType.CLEAR },
         border: { left: { style: docxFinal.BorderStyle.SINGLE, size: 6, color: color, space: 4 } },
         children: [new docxFinal.TextRun({ text: sec.title, bold: true, size: 28, font: 'Noto Sans', color: color })],
       }));
@@ -1439,48 +1447,43 @@ async function handleExportPdf() {
   const template = state.templates[state.selectedTemplate];
   const title = document.getElementById('editorTitle').value || state.currentDraft.title;
   const color = template.header_color || '#0057B8';
-  const lightFill = '#' + lightenColor(color.replace('#',''), 0.88);
 
   toast('Generating PDF...', 'info');
 
   try {
-    // Convert logos to base64 for embedding
-    const posLogoUrl = `${LOGO_BASE}logo_posillico.png`;
-    let posLogoB64 = '';
-    let rightLogoB64 = '';
+    // Use cached logos, convert ArrayBuffer to base64 for HTML embedding
+    await ensureLogosLoaded(template);
+    const posLogoBuf = logoCache['logo_posillico.png'];
+    const rightLogoBuf = template.right_logo ? logoCache[template.right_logo] : null;
 
-    try {
-      const resp = await fetch(posLogoUrl);
-      const blob = await resp.blob();
-      posLogoB64 = await blobToBase64(blob);
-    } catch(e) { console.log('Could not fetch Posillico logo for PDF'); }
-
-    if (template.right_logo) {
-      try {
-        const resp = await fetch(`${LOGO_BASE}${template.right_logo}`);
-        const blob = await resp.blob();
-        rightLogoB64 = await blobToBase64(blob);
-      } catch(e) { console.log('Could not fetch right logo for PDF'); }
+    function bufToB64(buf, type) {
+      if (!buf) return '';
+      const bytes = new Uint8Array(buf);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      return `data:image/${type};base64,${btoa(binary)}`;
     }
+    const posLogoB64 = bufToB64(posLogoBuf, 'png');
+    const rightLogoB64 = bufToB64(rightLogoBuf, 'png');
 
     // Build branded HTML
     let html = `<div style="font-family:'Noto Sans',sans-serif;color:#1a1f2e;padding:0;">`;
 
     // Header: logos + divider
     html += `<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;border-bottom:3px solid ${color};margin-bottom:20px;">`;
-    if (posLogoB64) html += `<img src="${posLogoB64}" style="height:32px;">`;
+    if (posLogoB64) html += `<img src="${posLogoB64}" style="height:40px;">`;
     else html += `<span style="font-weight:700;color:${color};font-size:14px;">POSILLICO</span>`;
-    if (rightLogoB64) html += `<img src="${rightLogoB64}" style="height:28px;">`;
+    if (rightLogoB64) html += `<img src="${rightLogoB64}" style="height:34px;">`;
     html += `</div>`;
 
-    // Title
-    html += `<h1 style="font-size:18px;font-weight:700;color:#1a1f2e;margin:0 0 16px 0;">${escHtml(title)}</h1>`;
+    // Title — 22pt bold underlined
+    html += `<h1 style="font-size:22px;font-weight:700;color:#1a1f2e;margin:0 0 16px 0;text-decoration:underline;">${escHtml(title)}</h1>`;
 
     // Sections
     for (const sec of state.sections) {
-      // Section heading with colored left border + light background
-      html += `<div style="background:${lightFill};border-left:3px solid ${color};padding:6px 10px;margin:16px 0 8px 0;">
-        <span style="font-weight:700;font-size:13px;color:${color};">${escHtml(sec.title)}</span>
+      // Section heading — colored text + left border, NO background
+      html += `<div style="border-left:3px solid ${color};padding:6px 10px;margin:16px 0 8px 0;">
+        <span style="font-weight:700;font-size:14px;color:${color};">${escHtml(sec.title)}</span>
       </div>`;
 
       // Section content
