@@ -1262,14 +1262,20 @@ async function handleExportDocx() {
 
     try {
       const resp = await fetch(posLogoUrl);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       posLogoBuffer = await resp.arrayBuffer();
-    } catch (e) { console.log('Could not fetch Posillico logo'); }
+      console.log('Posillico logo fetched, size:', posLogoBuffer.byteLength);
+    } catch (e) { console.warn('Could not fetch Posillico logo:', e.message); }
 
     if (template.right_logo) {
+      const rightUrl = `${LOGO_BASE}${template.right_logo}`;
+      console.log('Fetching right logo from:', rightUrl);
       try {
-        const resp = await fetch(`${LOGO_BASE}${template.right_logo}`);
+        const resp = await fetch(rightUrl);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         rightLogoBuffer = await resp.arrayBuffer();
-      } catch (e) { console.log('Could not fetch right logo'); }
+        console.log('Right logo fetched, size:', rightLogoBuffer.byteLength);
+      } catch (e) { console.warn('Could not fetch right logo:', e.message); }
     }
 
     // Build header children
@@ -1278,7 +1284,7 @@ async function handleExportDocx() {
     if (posLogoBuffer) {
       headerImgs.push(new docxFinal.ImageRun({
         type: 'png', data: posLogoBuffer,
-        transformation: { width: 120, height: 36 },
+        transformation: { width: 160, height: 48 },
         altText: { title: 'Posillico', description: 'Posillico Logo', name: 'posillico_logo' },
       }));
     }
@@ -1286,7 +1292,7 @@ async function handleExportDocx() {
       headerImgs.push(new docxFinal.TextRun({ text: '\t' }));
       headerImgs.push(new docxFinal.ImageRun({
         type: 'png', data: rightLogoBuffer,
-        transformation: { width: 100, height: 30 },
+        transformation: { width: 130, height: 40 },
         altText: { title: template.name, description: `${template.name} Logo`, name: 'right_logo' },
       }));
     }
@@ -1308,10 +1314,10 @@ async function handleExportDocx() {
     // Build doc content
     const docChildren = [];
 
-    // Title
+    // Title — size 22pt (44 half-pts), bold, underlined
     docChildren.push(new docxFinal.Paragraph({
       spacing: { before: 200, after: 300 },
-      children: [new docxFinal.TextRun({ text: title, bold: true, size: 32, font: 'Noto Sans', color: '1a1f2e' })],
+      children: [new docxFinal.TextRun({ text: title, bold: true, underline: { type: docxFinal.UnderlineType.SINGLE }, size: 44, font: 'Noto Sans', color: '1a1f2e' })],
     }));
 
     // Sections
@@ -1322,7 +1328,7 @@ async function handleExportDocx() {
         spacing: { before: 240, after: 120 },
         shading: { fill: lightFill, type: docxFinal.ShadingType.CLEAR },
         border: { left: { style: docxFinal.BorderStyle.SINGLE, size: 6, color: color, space: 4 } },
-        children: [new docxFinal.TextRun({ text: sec.title, bold: true, size: 24, font: 'Noto Sans', color: color })],
+        children: [new docxFinal.TextRun({ text: sec.title, bold: true, size: 28, font: 'Noto Sans', color: color })],
       }));
 
       // Section content
@@ -1333,8 +1339,8 @@ async function handleExportDocx() {
           docChildren.push(new docxFinal.Paragraph({
             spacing: { after: 60 },
             children: [
-              new docxFinal.TextRun({ text: `${li + 1}. `, bold: true, size: 20, font: 'Noto Sans' }),
-              new docxFinal.TextRun({ text: clean, size: 20, font: 'Noto Sans' }),
+              new docxFinal.TextRun({ text: `${li + 1}. `, bold: true, size: 22, font: 'Noto Sans' }),
+              new docxFinal.TextRun({ text: clean, size: 22, font: 'Noto Sans' }),
             ],
           }));
         });
@@ -1343,7 +1349,7 @@ async function handleExportDocx() {
         paragraphs.forEach(p => {
           docChildren.push(new docxFinal.Paragraph({
             spacing: { after: 120 },
-            children: [new docxFinal.TextRun({ text: p.replace(/\n/g, ' '), size: 20, font: 'Noto Sans' })],
+            children: [new docxFinal.TextRun({ text: p.replace(/\n/g, ' '), size: 22, font: 'Noto Sans' })],
           }));
         });
       }
@@ -1383,7 +1389,7 @@ async function handleExportDocx() {
     const doc = new docxFinal.Document({
       styles: {
         default: {
-          document: { run: { font: 'Noto Sans', size: 20 } },
+          document: { run: { font: 'Noto Sans', size: 22 } },
         },
       },
       sections: [{
