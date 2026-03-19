@@ -6,7 +6,7 @@
 <title>SOP Builder — Posillico</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://unpkg.com/docx@7.8.2/build/index.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@7.3.0/build/index.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <style>
 /* ── RESET & BASE ── */
@@ -1230,12 +1230,27 @@ function lightenColor(hex, amount) {
 async function handleExportDocx() {
   if (!state.currentDraft || state.selectedTemplate === null) return;
   
-  // Check docx library loaded — UMD bundle exposes as window.exportDocx
-  const docxLib = window.exportDocx || window.docx;
-  if (!docxLib || !docxLib.Document) {
-    console.log('docx check:', { exportDocx: typeof window.exportDocx, docx: typeof window.docx });
-    toast('Word export library failed to load. Refresh and try again.', 'error');
-    return;
+  // Check docx library loaded
+  const docxLib = window.docx || window.exportDocx || window.Docx || window.DOCX;
+  if (!docxLib) {
+    // Last resort: scan all window properties for anything with Document and Packer
+    let found = null;
+    for (const key of Object.keys(window)) {
+      const val = window[key];
+      if (val && typeof val === 'object' && val.Document && val.Packer) {
+        found = val;
+        console.log('Found docx library under window.' + key);
+        break;
+      }
+    }
+    if (!found) {
+      toast('Word export library failed to load. Refresh and try again.', 'error');
+      console.log('All window keys with "doc":', Object.keys(window).filter(k => k.toLowerCase().includes('doc')));
+      return;
+    }
+    var docxFinal = found;
+  } else {
+    var docxFinal = docxLib;
   }
   
   const template = state.templates[state.selectedTemplate];
@@ -1266,15 +1281,15 @@ async function handleExportDocx() {
     const headerChildren = [];
     const headerImgs = [];
     if (posLogoBuffer) {
-      headerImgs.push(new docxLib.ImageRun({
+      headerImgs.push(new docxFinal.ImageRun({
         type: 'png', data: posLogoBuffer,
         transformation: { width: 120, height: 36 },
         altText: { title: 'Posillico', description: 'Posillico Logo', name: 'posillico_logo' },
       }));
     }
     if (rightLogoBuffer) {
-      headerImgs.push(new docxLib.TextRun({ text: '\t' }));
-      headerImgs.push(new docxLib.ImageRun({
+      headerImgs.push(new docxFinal.TextRun({ text: '\t' }));
+      headerImgs.push(new docxFinal.ImageRun({
         type: 'png', data: rightLogoBuffer,
         transformation: { width: 100, height: 30 },
         altText: { title: template.name, description: `${template.name} Logo`, name: 'right_logo' },
@@ -1282,16 +1297,16 @@ async function handleExportDocx() {
     }
 
     if (headerImgs.length > 0) {
-      headerChildren.push(new docxLib.Paragraph({
+      headerChildren.push(new docxFinal.Paragraph({
         children: headerImgs,
-        tabStops: rightLogoBuffer ? [{ type: docxLib.TabStopType.RIGHT, position: docxLib.TabStopPosition.MAX }] : [],
+        tabStops: rightLogoBuffer ? [{ type: docxFinal.TabStopType.RIGHT, position: docxFinal.TabStopPosition.MAX }] : [],
       }));
     }
 
     // Add colored divider line
-    headerChildren.push(new docxLib.Paragraph({
+    headerChildren.push(new docxFinal.Paragraph({
       spacing: { before: 80 },
-      border: { bottom: { style: docxLib.BorderStyle.SINGLE, size: 8, color: color, space: 1 } },
+      border: { bottom: { style: docxFinal.BorderStyle.SINGLE, size: 8, color: color, space: 1 } },
       children: [],
     }));
 
@@ -1299,20 +1314,20 @@ async function handleExportDocx() {
     const docChildren = [];
 
     // Title
-    docChildren.push(new docxLib.Paragraph({
+    docChildren.push(new docxFinal.Paragraph({
       spacing: { before: 200, after: 300 },
-      children: [new docxLib.TextRun({ text: title, bold: true, size: 32, font: 'Noto Sans', color: '1a1f2e' })],
+      children: [new docxFinal.TextRun({ text: title, bold: true, size: 32, font: 'Noto Sans', color: '1a1f2e' })],
     }));
 
     // Sections
     for (const sec of state.sections) {
       // Section heading — compute light fill from header color
       const lightFill = lightenColor(color, 0.88);
-      docChildren.push(new docxLib.Paragraph({
+      docChildren.push(new docxFinal.Paragraph({
         spacing: { before: 240, after: 120 },
-        shading: { fill: lightFill, type: docxLib.ShadingType.CLEAR },
-        border: { left: { style: docxLib.BorderStyle.SINGLE, size: 6, color: color, space: 4 } },
-        children: [new docxLib.TextRun({ text: sec.title, bold: true, size: 24, font: 'Noto Sans', color: color })],
+        shading: { fill: lightFill, type: docxFinal.ShadingType.CLEAR },
+        border: { left: { style: docxFinal.BorderStyle.SINGLE, size: 6, color: color, space: 4 } },
+        children: [new docxFinal.TextRun({ text: sec.title, bold: true, size: 24, font: 'Noto Sans', color: color })],
       }));
 
       // Section content
@@ -1320,20 +1335,20 @@ async function handleExportDocx() {
         const lines = sec.content.split('\n').filter(l => l.trim());
         lines.forEach((line, li) => {
           const clean = line.replace(/^\d+[\.\)]\s*/, '');
-          docChildren.push(new docxLib.Paragraph({
+          docChildren.push(new docxFinal.Paragraph({
             spacing: { after: 60 },
             children: [
-              new docxLib.TextRun({ text: `${li + 1}. `, bold: true, size: 20, font: 'Noto Sans' }),
-              new docxLib.TextRun({ text: clean, size: 20, font: 'Noto Sans' }),
+              new docxFinal.TextRun({ text: `${li + 1}. `, bold: true, size: 20, font: 'Noto Sans' }),
+              new docxFinal.TextRun({ text: clean, size: 20, font: 'Noto Sans' }),
             ],
           }));
         });
       } else {
         const paragraphs = sec.content.split('\n\n').filter(p => p.trim());
         paragraphs.forEach(p => {
-          docChildren.push(new docxLib.Paragraph({
+          docChildren.push(new docxFinal.Paragraph({
             spacing: { after: 120 },
-            children: [new docxLib.TextRun({ text: p.replace(/\n/g, ' '), size: 20, font: 'Noto Sans' })],
+            children: [new docxFinal.TextRun({ text: p.replace(/\n/g, ' '), size: 20, font: 'Noto Sans' })],
           }));
         });
       }
@@ -1355,9 +1370,9 @@ async function handleExportDocx() {
             }
             if (imgBuffer) {
               const imgType = (img.name || '').toLowerCase().endsWith('.png') ? 'png' : 'jpg';
-              docChildren.push(new docxLib.Paragraph({
+              docChildren.push(new docxFinal.Paragraph({
                 spacing: { before: 80, after: 80 },
-                children: [new docxLib.ImageRun({
+                children: [new docxFinal.ImageRun({
                   type: imgType, data: imgBuffer,
                   transformation: { width: 450, height: 280 },
                   altText: { title: img.name || 'Image', description: 'Section image', name: img.name || 'img' },
@@ -1370,7 +1385,7 @@ async function handleExportDocx() {
     }
 
     // Build document
-    const doc = new docxLib.Document({
+    const doc = new docxFinal.Document({
       styles: {
         default: {
           document: { run: { font: 'Noto Sans', size: 20 } },
@@ -1384,18 +1399,18 @@ async function handleExportDocx() {
           },
         },
         headers: {
-          default: new docxLib.Header({ children: headerChildren }),
+          default: new docxFinal.Header({ children: headerChildren }),
         },
         footers: {
-          default: new docxLib.Footer({
-            children: [new docxLib.Paragraph({
+          default: new docxFinal.Footer({
+            children: [new docxFinal.Paragraph({
               children: [
-                new docxLib.TextRun({ text: 'Posillico Inc.', size: 16, font: 'Noto Sans', color: '999999' }),
-                new docxLib.TextRun({ text: '\t' }),
-                new docxLib.TextRun({ text: 'Page ', size: 16, font: 'Noto Sans', color: '999999' }),
-                new docxLib.TextRun({ children: [docxLib.PageNumber.CURRENT], size: 16, font: 'Noto Sans', color: '999999' }),
+                new docxFinal.TextRun({ text: 'Posillico Inc.', size: 16, font: 'Noto Sans', color: '999999' }),
+                new docxFinal.TextRun({ text: '\t' }),
+                new docxFinal.TextRun({ text: 'Page ', size: 16, font: 'Noto Sans', color: '999999' }),
+                new docxFinal.TextRun({ children: [docxFinal.PageNumber.CURRENT], size: 16, font: 'Noto Sans', color: '999999' }),
               ],
-              tabStops: [{ type: docxLib.TabStopType.RIGHT, position: docxLib.TabStopPosition.MAX }],
+              tabStops: [{ type: docxFinal.TabStopType.RIGHT, position: docxFinal.TabStopPosition.MAX }],
             })],
           }),
         },
@@ -1403,7 +1418,7 @@ async function handleExportDocx() {
       }],
     });
 
-    const buffer = await docxLib.Packer.toBlob(doc);
+    const buffer = await docxFinal.Packer.toBlob(doc);
     const fileName = `${title.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_')}.docx`;
     saveAs(buffer, fileName);
     toast('Exported!', 'success');
