@@ -6,8 +6,17 @@
 <title>SOP Builder — Posillico</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/docx@7.3.0/build/index.js"></script>
+<script>
+// Load docx library and capture it reliably before anything else claims window.docx
+window.__DOCX_LIB = null;
+</script>
+<script src="https://cdn.jsdelivr.net/npm/docx@7.3.0/build/index.js" onload="
+  window.__DOCX_LIB = window.docx || null;
+  if(window.__DOCX_LIB && window.__DOCX_LIB.Document) console.log('docx library captured OK');
+  else console.warn('docx library loaded but Document not found');
+"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
 /* ── RESET & BASE ── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -341,6 +350,7 @@ a{color:var(--pos-blue);text-decoration:none}
           <div class="editor-actions">
             <button class="btn btn-outline" onclick="saveCurrentDraft()">💾 Save</button>
             <button class="btn btn-green" onclick="handleExportDocx()">📥 Export .docx</button>
+            <button class="btn btn-green" onclick="handleExportPdf()">📄 Export PDF</button>
             <button class="btn btn-outline" onclick="togglePreview()">👁 Preview</button>
           </div>
         </div>
@@ -1230,27 +1240,12 @@ function lightenColor(hex, amount) {
 async function handleExportDocx() {
   if (!state.currentDraft || state.selectedTemplate === null) return;
   
-  // Check docx library loaded
-  const docxLib = window.docx || window.exportDocx || window.Docx || window.DOCX;
-  if (!docxLib) {
-    // Last resort: scan all window properties for anything with Document and Packer
-    let found = null;
-    for (const key of Object.keys(window)) {
-      const val = window[key];
-      if (val && typeof val === 'object' && val.Document && val.Packer) {
-        found = val;
-        console.log('Found docx library under window.' + key);
-        break;
-      }
-    }
-    if (!found) {
-      toast('Word export library failed to load. Refresh and try again.', 'error');
-      console.log('All window keys with "doc":', Object.keys(window).filter(k => k.toLowerCase().includes('doc')));
-      return;
-    }
-    var docxFinal = found;
-  } else {
-    var docxFinal = docxLib;
+  // Use pre-captured docx library (set on script load)
+  const docxFinal = window.__DOCX_LIB || window.docx;
+  if (!docxFinal || !docxFinal.Document || !docxFinal.Packer) {
+    toast('Word export library failed to load. Refresh and try again.', 'error');
+    console.error('docx library state:', { __DOCX_LIB: !!window.__DOCX_LIB, windowDocx: !!window.docx });
+    return;
   }
   
   const template = state.templates[state.selectedTemplate];
@@ -1427,6 +1422,132 @@ async function handleExportDocx() {
     toast(`Export error: ${err.message}`, 'error');
     console.error(err);
   }
+}
+
+// ═══════════════════════════════════════════
+// PDF EXPORT
+// ═══════════════════════════════════════════
+async function handleExportPdf() {
+  if (!state.currentDraft || state.selectedTemplate === null) return;
+
+  const template = state.templates[state.selectedTemplate];
+  const title = document.getElementById('editorTitle').value || state.currentDraft.title;
+  const color = template.header_color || '#0057B8';
+  const lightFill = '#' + lightenColor(color.replace('#',''), 0.88);
+
+  toast('Generating PDF...', 'info');
+
+  try {
+    // Convert logos to base64 for embedding
+    const posLogoUrl = `${LOGO_BASE}logo_posillico.png`;
+    let posLogoB64 = '';
+    let rightLogoB64 = '';
+
+    try {
+      const resp = await fetch(posLogoUrl);
+      const blob = await resp.blob();
+      posLogoB64 = await blobToBase64(blob);
+    } catch(e) { console.log('Could not fetch Posillico logo for PDF'); }
+
+    if (template.right_logo) {
+      try {
+        const resp = await fetch(`${LOGO_BASE}${template.right_logo}`);
+        const blob = await resp.blob();
+        rightLogoB64 = await blobToBase64(blob);
+      } catch(e) { console.log('Could not fetch right logo for PDF'); }
+    }
+
+    // Build branded HTML
+    let html = `<div style="font-family:'Noto Sans',sans-serif;color:#1a1f2e;padding:0;">`;
+
+    // Header: logos + divider
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;border-bottom:3px solid ${color};margin-bottom:20px;">`;
+    if (posLogoB64) html += `<img src="${posLogoB64}" style="height:32px;">`;
+    else html += `<span style="font-weight:700;color:${color};font-size:14px;">POSILLICO</span>`;
+    if (rightLogoB64) html += `<img src="${rightLogoB64}" style="height:28px;">`;
+    html += `</div>`;
+
+    // Title
+    html += `<h1 style="font-size:18px;font-weight:700;color:#1a1f2e;margin:0 0 16px 0;">${escHtml(title)}</h1>`;
+
+    // Sections
+    for (const sec of state.sections) {
+      // Section heading with colored left border + light background
+      html += `<div style="background:${lightFill};border-left:3px solid ${color};padding:6px 10px;margin:16px 0 8px 0;">
+        <span style="font-weight:700;font-size:13px;color:${color};">${escHtml(sec.title)}</span>
+      </div>`;
+
+      // Section content
+      if (sec.type === 'steps') {
+        const lines = sec.content.split('\n').filter(l => l.trim());
+        html += `<ol style="margin:4px 0 8px 20px;font-size:11px;line-height:1.6;">`;
+        lines.forEach(line => {
+          const clean = line.replace(/^\d+[\.\)]\s*/, '');
+          html += `<li style="margin-bottom:3px;">${escHtml(clean)}</li>`;
+        });
+        html += `</ol>`;
+      } else {
+        const paragraphs = sec.content.split('\n\n').filter(p => p.trim());
+        paragraphs.forEach(p => {
+          html += `<p style="font-size:11px;line-height:1.6;margin:0 0 8px 0;">${escHtml(p.replace(/\n/g, ' '))}</p>`;
+        });
+      }
+
+      // Section images
+      if (sec.images?.length) {
+        for (const img of sec.images) {
+          try {
+            let imgSrc = '';
+            if (img.dataUrl) {
+              imgSrc = img.dataUrl;
+            } else if (img.url) {
+              const resp = await fetch(img.url);
+              const blob = await resp.blob();
+              imgSrc = await blobToBase64(blob);
+            }
+            if (imgSrc) {
+              html += `<div style="margin:6px 0;"><img src="${imgSrc}" style="max-width:100%;max-height:320px;border:1px solid #ddd;border-radius:4px;"></div>`;
+            }
+          } catch(e) { console.log('Could not embed image in PDF:', e.message); }
+        }
+      }
+    }
+
+    // Footer
+    html += `<div style="margin-top:24px;padding-top:8px;border-top:1px solid #ddd;display:flex;justify-content:space-between;font-size:9px;color:#999;">
+      <span>Posillico Inc.</span>
+      <span>${new Date().toLocaleDateString()}</span>
+    </div>`;
+
+    html += `</div>`;
+
+    // Generate PDF
+    const fileName = `${title.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_')}.pdf`;
+    const opt = {
+      margin: [0.6, 0.7, 0.6, 0.7],
+      filename: fileName,
+      image: { type: 'jpeg', quality: 0.95 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
+    };
+
+    await html2pdf().set(opt).from(html).save();
+    toast('PDF exported!', 'success');
+
+  } catch (err) {
+    toast(`PDF export error: ${err.message}`, 'error');
+    console.error(err);
+  }
+}
+
+// Helper: blob to base64 data URL
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }
 
 // ═══════════════════════════════════════════
