@@ -498,14 +498,56 @@ async function loadTemplates() {
   state.templates = TEMPLATE_DEFAULTS;
 }
 
-// Pre-load a logo URL as ArrayBuffer for docx export (avoids CORS issues at export time)
+// Pre-load a logo URL as ArrayBuffer using img+canvas (avoids CORS fetch issues)
 async function fetchLogoBuffer(url) {
   try {
-    const resp = await fetch(url, { mode: 'cors' });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const buf = await resp.arrayBuffer();
-    console.log('Logo loaded:', url, buf.byteLength, 'bytes');
-    return buf;
+    // Method 1: Try fetch first
+    try {
+      const resp = await fetch(url, { mode: 'cors' });
+      if (resp.ok) {
+        const buf = await resp.arrayBuffer();
+        if (buf.byteLength > 100) {
+          console.log('Logo loaded (fetch):', url, buf.byteLength, 'bytes');
+          return buf;
+        }
+      }
+    } catch(e) { /* fall through to img method */ }
+
+    // Method 2: Load via <img> + canvas (works even if fetch CORS fails)
+    return await new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          canvas.toBlob((blob) => {
+            if (blob) {
+              blob.arrayBuffer().then(buf => {
+                console.log('Logo loaded (canvas):', url, buf.byteLength, 'bytes');
+                resolve(buf);
+              });
+            } else {
+              console.warn('Logo canvas toBlob failed:', url);
+              resolve(null);
+            }
+          }, 'image/png');
+        } catch(e) {
+          console.warn('Logo canvas draw failed:', url, e.message);
+          resolve(null);
+        }
+      };
+      img.onerror = () => {
+        console.warn('Logo img load failed:', url);
+        resolve(null);
+      };
+      // Timeout after 5 seconds
+      setTimeout(() => { console.warn('Logo load timeout:', url); resolve(null); }, 5000);
+      img.src = url;
+    });
   } catch(e) {
     console.warn('Logo fetch failed:', url, e.message);
     return null;
@@ -551,7 +593,9 @@ function selectTemplate(idx) {
     c.classList.toggle('selected', i === idx);
   });
   // Pre-load logos for export
-  ensureLogosLoaded(state.templates[idx]);
+  const t = state.templates[idx];
+  console.log('Selected template:', t.name, '| right_logo:', JSON.stringify(t.right_logo));
+  ensureLogosLoaded(t);
 }
 
 // ═══════════════════════════════════════════
@@ -1332,10 +1376,9 @@ async function handleExportDocx() {
 
     // Sections
     for (const sec of state.sections) {
-      // Section heading — colored text + left border, no background
+      // Section heading — colored text only, no border or shading
       docChildren.push(new docxFinal.Paragraph({
         spacing: { before: 240, after: 120 },
-        border: { left: { style: docxFinal.BorderStyle.SINGLE, size: 6, color: color, space: 4 } },
         children: [new docxFinal.TextRun({ text: sec.title, bold: true, size: 28, font: 'Noto Sans', color: color })],
       }));
 
@@ -1481,8 +1524,8 @@ async function handleExportPdf() {
 
     // Sections
     for (const sec of state.sections) {
-      // Section heading — colored text + left border, NO background
-      html += `<div style="border-left:3px solid ${color};padding:6px 10px;margin:16px 0 8px 0;">
+      // Section heading — colored text only, no border or shading
+      html += `<div style="padding:6px 0;margin:16px 0 8px 0;">
         <span style="font-weight:700;font-size:14px;color:${color};">${escHtml(sec.title)}</span>
       </div>`;
 
