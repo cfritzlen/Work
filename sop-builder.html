@@ -1164,12 +1164,28 @@ async function saveCurrentDraft() {
         if (!dbSection) continue;
 
         for (const img of sec.images) {
-          if (img.url) continue; // already uploaded
-          if (!img.file) continue;
+          if (img.url && !img.file) {
+            // Already uploaded to storage — just re-link to the new section ID
+            await sb.from('work_sop_section_images').insert({
+              section_id: dbSection.id,
+              image_url: img.url,
+              file_name: img.name,
+            });
+            continue;
+          }
+          if (!img.file && !img.dataUrl) continue;
+
+          // New image — needs to be uploaded first
+          let fileToUpload = img.file;
+          if (!fileToUpload && img.dataUrl) {
+            // Convert dataUrl to blob for upload
+            const resp = await fetch(img.dataUrl);
+            fileToUpload = await resp.blob();
+          }
           
           const filePath = `SOP_images/${draftId}/${dbSection.id}_${img.name}`;
           const { error: upErr } = await sb.storage.from(STORAGE_BUCKET)
-            .upload(filePath, img.file, { upsert: true });
+            .upload(filePath, fileToUpload, { upsert: true });
           
           if (!upErr) {
             const url = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${filePath}`;
@@ -1347,6 +1363,7 @@ async function handleExportDocx() {
 
     // Build header children
     const headerChildren = [];
+    // Row 1: Posillico logo (left) + right logo (right)
     const headerImgs = [];
     if (posLogoBuffer) {
       headerImgs.push(new docxFinal.ImageRun({
@@ -1357,7 +1374,6 @@ async function handleExportDocx() {
     }
     if (rightLogoBuffer) {
       headerImgs.push(new docxFinal.TextRun({ text: '\t' }));
-      // Scale proportionally: target height 40, calculate width from aspect ratio
       const rw = rightLogoBuffer._imgWidth || 200;
       const rh = rightLogoBuffer._imgHeight || 60;
       const targetH = 40;
@@ -1368,13 +1384,17 @@ async function handleExportDocx() {
         altText: { title: template.name, description: `${template.name} Logo`, name: 'right_logo' },
       }));
     }
-
     if (headerImgs.length > 0) {
       headerChildren.push(new docxFinal.Paragraph({
         children: headerImgs,
-        tabStops: rightLogoBuffer ? [{ type: docxFinal.TabStopType.RIGHT, position: docxFinal.TabStopPosition.MAX }] : [],
+        tabStops: [{ type: docxFinal.TabStopType.RIGHT, position: docxFinal.TabStopPosition.MAX }],
       }));
     }
+    // Row 2: [Topic Title] right-aligned in gray
+    headerChildren.push(new docxFinal.Paragraph({
+      alignment: docxFinal.AlignmentType.RIGHT,
+      children: [new docxFinal.TextRun({ text: title, size: 20, font: 'Noto Sans', color: 'C4CAC7' })],
+    }));
 
     // Build doc content
     const docChildren = [];
@@ -1421,23 +1441,36 @@ async function handleExportDocx() {
         for (const img of sec.images) {
           try {
             let imgBuffer;
+            let imgSrc = '';
             if (img.url) {
               const resp = await fetch(img.url);
               imgBuffer = await resp.arrayBuffer();
+              imgSrc = img.url;
             } else if (img.dataUrl) {
               const base64 = img.dataUrl.split(',')[1];
               const binary = atob(base64);
               const bytes = new Uint8Array(binary.length);
               for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
               imgBuffer = bytes.buffer;
+              imgSrc = img.dataUrl;
             }
             if (imgBuffer) {
+              // Get actual image dimensions to preserve aspect ratio
+              const dims = await getImageDimensions(imgSrc);
+              const maxW = 500; // max width in docx points
+              const maxH = 600; // max height
+              let w = dims.width;
+              let h = dims.height;
+              // Scale down to fit within max bounds while keeping aspect ratio
+              if (w > maxW) { h = Math.round(h * (maxW / w)); w = maxW; }
+              if (h > maxH) { w = Math.round(w * (maxH / h)); h = maxH; }
+
               const imgType = (img.name || '').toLowerCase().endsWith('.png') ? 'png' : 'jpg';
               docChildren.push(new docxFinal.Paragraph({
                 spacing: { before: 80, after: 80 },
                 children: [new docxFinal.ImageRun({
                   type: imgType, data: imgBuffer,
-                  transformation: { width: 450, height: 280 },
+                  transformation: { width: w, height: h },
                   altText: { title: img.name || 'Image', description: 'Section image', name: img.name || 'img' },
                 })],
               }));
@@ -1468,12 +1501,17 @@ async function handleExportDocx() {
           default: new docxFinal.Footer({
             children: [new docxFinal.Paragraph({
               children: [
-                new docxFinal.TextRun({ text: 'Posillico Inc.', size: 16, font: 'Noto Sans', color: '999999' }),
+                new docxFinal.TextRun({ text: `Revised on: ${new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })}`, size: 20, font: 'Noto Sans', color: 'C4CAC7' }),
                 new docxFinal.TextRun({ text: '\t' }),
-                new docxFinal.TextRun({ text: 'Page ', size: 16, font: 'Noto Sans', color: '999999' }),
-                new docxFinal.TextRun({ children: [docxFinal.PageNumber.CURRENT], size: 16, font: 'Noto Sans', color: '999999' }),
+                new docxFinal.TextRun({ text: '[Prepared by]', size: 20, font: 'Noto Sans', color: 'C4CAC7' }),
+                new docxFinal.TextRun({ text: '\t' }),
+                new docxFinal.TextRun({ text: 'Page ', size: 20, font: 'Noto Sans', color: 'C4CAC7' }),
+                new docxFinal.TextRun({ children: [docxFinal.PageNumber.CURRENT], size: 20, font: 'Noto Sans', color: 'C4CAC7' }),
               ],
-              tabStops: [{ type: docxFinal.TabStopType.RIGHT, position: docxFinal.TabStopPosition.MAX }],
+              tabStops: [
+                { type: docxFinal.TabStopType.CENTER, position: 4680 },
+                { type: docxFinal.TabStopType.RIGHT, position: docxFinal.TabStopPosition.MAX },
+              ],
             })],
           }),
         },
@@ -1577,9 +1615,11 @@ async function handleExportPdf() {
     }
 
     // Footer
-    html += `<div style="margin-top:24px;padding-top:8px;border-top:1px solid #ddd;display:flex;justify-content:space-between;font-size:9px;color:#999;">
-      <span>Posillico Inc.</span>
-      <span>${new Date().toLocaleDateString()}</span>
+    const today = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+    html += `<div style="margin-top:24px;padding-top:8px;border-top:1px solid #ddd;display:flex;justify-content:space-between;font-size:10px;color:#C4CAC7;">
+      <span>Revised on: ${today}</span>
+      <span>[Prepared by]</span>
+      <span>Page 1</span>
     </div>`;
 
     html += `</div>`;
@@ -1610,6 +1650,16 @@ function blobToBase64(blob) {
     reader.onloadend = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsDataURL(blob);
+  });
+}
+
+// Helper: get image dimensions from a src (url or dataUrl)
+function getImageDimensions(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => resolve({ width: 500, height: 300 }); // fallback
+    img.src = src;
   });
 }
 
